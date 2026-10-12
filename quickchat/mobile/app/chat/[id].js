@@ -32,7 +32,7 @@ export default function ChatScreen() {
   const recipientId = String(id);
   const friend = name || recipientId;
 
-  const { identity } = useIdentity();
+  const { user } = useIdentity();
   const { status, presence, seedPresence } = useChatSocket();
   const { messages, loading, loadingMore, hasMore, error, sendText, retry, loadOlder } =
     useChat(recipientId);
@@ -54,7 +54,7 @@ export default function ChatScreen() {
 
   const data = useMemo(() => [...messages].reverse(), [messages]);
 
-  const selfId = identity ? identity.id : null;
+  const selfId = user ? user._id : null;
   const banner = CONNECTION_LABEL[status];
 
   const friendEntry = presence[recipientId] || null;

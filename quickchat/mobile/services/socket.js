@@ -6,8 +6,10 @@ const ACK_TIMEOUT = 8000;
 
 let socket = null;
 
-export function connectSocket() {
+export function connectSocket(token) {
   if (socket) {
+    socket.auth = { token };
+
     if (!socket.connected && !socket.active) {
       socket.connect();
     }
@@ -16,6 +18,7 @@ export function connectSocket() {
   }
 
   socket = io(SOCKET_URL, {
+    auth: { token },
     transports: ['websocket'],
     reconnection: true,
     reconnectionAttempts: Infinity,

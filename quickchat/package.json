@@ -8,7 +8,8 @@
     "server": "npm --prefix server run dev",
     "mobile": "npm --prefix mobile run start",
     "dev": "concurrently -n server,mobile -c blue,magenta \"npm run server\" \"npm run mobile\"",
-    "start": "npm run dev"
+    "start": "npm run dev",
+    "test": "npm --prefix server run test:audit"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"

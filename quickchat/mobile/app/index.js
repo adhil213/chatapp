@@ -13,14 +13,17 @@ import { Redirect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useIdentity } from '../hooks/useIdentity';
-import { registerUser } from '../services/api';
 
-export default function HomeScreen() {
-  const { identity, loading, signIn } = useIdentity();
+const USERNAME_PATTERN = /^[a-z0-9_]{3,20}$/;
+
+export default function AuthScreen() {
+  const { user, loading, signIn, signUp } = useIdentity();
+  const [mode, setMode] = useState('login');
+  const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
-  const [suggestions, setSuggestions] = useState([]);
 
   if (loading) {
     return (
@@ -30,29 +33,45 @@ export default function HomeScreen() {
     );
   }
 
-  if (identity) {
-    return <Redirect href="/users" />;
+  if (user) {
+    return <Redirect href="/chats" />;
   }
 
-  const submit = async (value) => {
-    const name = (value ?? displayName).trim();
+  const isRegister = mode === 'register';
 
-    if (name.length < 2) {
-      setError('Please enter at least 2 characters.');
-      setSuggestions([]);
+  const submit = async () => {
+    const cleanUsername = username.trim().toLowerCase();
+
+    if (!USERNAME_PATTERN.test(cleanUsername)) {
+      setError('Username must be 3-20 characters: a-z, 0-9 or _.');
+      return;
+    }
+
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters.');
+      return;
+    }
+
+    if (isRegister && displayName.trim().length < 1) {
+      setError('Please enter a display name.');
       return;
     }
 
     setSubmitting(true);
     setError(null);
-    setSuggestions([]);
 
     try {
-      const user = await registerUser(name);
-      await signIn(user);
+      if (isRegister) {
+        await signUp({
+          username: cleanUsername,
+          displayName: displayName.trim(),
+          password,
+        });
+      } else {
+        await signIn({ username: cleanUsername, password });
+      }
     } catch (err) {
       setError(err.message);
-      setSuggestions(err.suggestions || []);
     } finally {
       setSubmitting(false);
     }
@@ -66,51 +85,76 @@ export default function HomeScreen() {
       >
         <View style={styles.container}>
           <Text style={styles.heading}>QuickChat</Text>
-          <Text style={styles.sub}>Pick a display name to get started.</Text>
+          <Text style={styles.sub}>
+            {isRegister ? 'Create an account to get started.' : 'Sign in to continue.'}
+          </Text>
+
+          <View style={styles.tabs}>
+            {['login', 'register'].map((item) => (
+              <TouchableOpacity
+                key={item}
+                style={[styles.tab, mode === item && styles.tabActive]}
+                onPress={() => {
+                  setMode(item);
+                  setError(null);
+                }}
+                disabled={submitting}
+              >
+                <Text style={[styles.tabText, mode === item && styles.tabTextActive]}>
+                  {item === 'login' ? 'Sign in' : 'Create account'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
 
           <TextInput
             style={styles.input}
-            placeholder="Your display name"
+            placeholder="Username"
             placeholderTextColor="#9ca3af"
-            value={displayName}
-            onChangeText={setDisplayName}
-            autoCapitalize="words"
+            value={username}
+            onChangeText={setUsername}
+            autoCapitalize="none"
             autoCorrect={false}
-            maxLength={32}
+            maxLength={20}
+            editable={!submitting}
+          />
+
+          {isRegister ? (
+            <TextInput
+              style={styles.input}
+              placeholder="Display name"
+              placeholderTextColor="#9ca3af"
+              value={displayName}
+              onChangeText={setDisplayName}
+              autoCapitalize="words"
+              maxLength={32}
+              editable={!submitting}
+            />
+          ) : null}
+
+          <TextInput
+            style={styles.input}
+            placeholder="Password"
+            placeholderTextColor="#9ca3af"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            autoCapitalize="none"
             editable={!submitting}
             returnKeyType="done"
-            onSubmitEditing={() => submit()}
+            onSubmitEditing={submit}
           />
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
-          {suggestions.length > 0 ? (
-            <View style={styles.suggestBox}>
-              <Text style={styles.suggestLabel}>Try one of these:</Text>
-              <View style={styles.chips}>
-                {suggestions.map((name) => (
-                  <TouchableOpacity
-                    key={name}
-                    style={styles.chip}
-                    onPress={() => {
-                      setDisplayName(name);
-                      submit(name);
-                    }}
-                    disabled={submitting}
-                  >
-                    <Text style={styles.chipText}>{name}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-          ) : null}
-
           <TouchableOpacity
             style={[styles.button, submitting && styles.buttonDisabled]}
-            onPress={() => submit()}
+            onPress={submit}
             disabled={submitting}
           >
-            <Text style={styles.buttonText}>{submitting ? 'Creating…' : 'Continue'}</Text>
+            <Text style={styles.buttonText}>
+              {submitting ? 'Please wait…' : isRegister ? 'Create account' : 'Sign in'}
+            </Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -144,7 +188,30 @@ const styles = StyleSheet.create({
   sub: {
     fontSize: 14,
     color: '#6b7280',
-    marginBottom: 8,
+    marginBottom: 4,
+  },
+  tabs: {
+    flexDirection: 'row',
+    backgroundColor: '#e5e7eb',
+    borderRadius: 10,
+    padding: 4,
+    gap: 4,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  tabActive: {
+    backgroundColor: '#ffffff',
+  },
+  tabText: {
+    color: '#6b7280',
+    fontWeight: '600',
+  },
+  tabTextActive: {
+    color: '#111827',
   },
   input: {
     backgroundColor: '#ffffff',
@@ -158,28 +225,6 @@ const styles = StyleSheet.create({
   },
   error: {
     color: '#b91c1c',
-    fontWeight: '600',
-  },
-  suggestBox: {
-    gap: 8,
-  },
-  suggestLabel: {
-    color: '#6b7280',
-    fontSize: 13,
-  },
-  chips: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  chip: {
-    backgroundColor: '#e0e7ff',
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  chipText: {
-    color: '#3730a3',
     fontWeight: '600',
   },
   button: {

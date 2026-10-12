@@ -3,7 +3,7 @@ import { useFocusEffect } from 'expo-router';
 
 import { useIdentity } from './useIdentity';
 import { useChatSocket } from './useChatSocket';
-import { getMessages } from '../services/api';
+import { getConversationMessages } from '../services/api';
 import { createClientMessageId } from '../utils/uuid';
 
 const MAX_TEXT_LENGTH = 2000;
@@ -95,8 +95,8 @@ function mergeMessages(list, incoming, pending) {
 }
 
 export function useChat(recipientId) {
-  const { identity } = useIdentity();
-  const selfId = identity ? identity.id : null;
+  const { user } = useIdentity();
+  const selfId = user ? user._id : null;
 
   const { subscribe, joinConversation, sendMessage, markDelivered, markRead } = useChatSocket();
 
@@ -216,7 +216,7 @@ export function useChat(recipientId) {
   const loadInitial = useCallback(async () => {
     if (!selfId || !recipientId) return;
 
-    const result = await getMessages({ userId: selfId, otherId: recipientId, limit: PAGE_SIZE });
+    const result = await getConversationMessages({ otherId: recipientId, limit: PAGE_SIZE });
 
     setConversationId(result.conversationId);
     setMessages((prev) => mergeMessages(prev, result.messages, false));
@@ -240,8 +240,7 @@ export function useChat(recipientId) {
     setLoadingMore(true);
 
     try {
-      const result = await getMessages({
-        userId: selfId,
+      const result = await getConversationMessages({
         otherId: recipientId,
         limit: PAGE_SIZE,
         before: oldestCursorRef.current,
@@ -278,8 +277,7 @@ export function useChat(recipientId) {
       while (cursor && guard < 50) {
         guard += 1;
 
-        const result = await getMessages({
-          userId: selfId,
+        const result = await getConversationMessages({
           otherId: recipientId,
           limit: SYNC_PAGE_SIZE,
           after: cursor,

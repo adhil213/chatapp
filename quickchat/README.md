@@ -1,21 +1,24 @@
 # QuickChat
 
-A small real-time chat app: **Node/Express + MongoDB + Socket.IO** backend with an **Expo React Native** mobile client.
+A small real-time chat app: **Node/Express + MongoDB + Socket.IO** backend with an **Expo React Native** mobile client. Accounts are protected with **passwords (bcrypt) and JWT**, and messaging is gated behind an explicit **chat-request / acceptance** flow.
 
-> ⚠️ **Prototype, not production-secure.** QuickChat has **no authentication**. Identity is a self-declared `displayName` that maps to a MongoDB `ObjectId`. See [Security limitations](#security-limitations).
+> ⚠️ **Prototype.** Auth, rate limiting, and authorization are in place, but this is still a learning project. See [Security notes](#security-notes).
 
 ---
 
 ## Features
 
-- Passwordless name-based sign-in (prototype identity)
+- **Username accounts**: register / sign in with a username + password; JWT session persisted on device
+- **Profile**: edit display name; view `@username`
+- **User search**: prefix search by username, with live relationship state
+- **Chat requests**: send / accept / reject; a conversation is only created once accepted
+- **Authorization**: every REST call and socket event is scoped to the authenticated user; messaging requires an accepted relationship
 - 1:1 conversations, persisted in MongoDB
-- Optimistic send with retry, rollback on permanent failure, and idempotent (client-generated ID) delivery
+- Optimistic send with retry, rollback on permanent failure, idempotent (client-generated ID) delivery
 - Receipts: `sent → delivered → read` (monotonic, race-safe)
 - Online / offline presence with `lastSeen` and a reconnect grace window
-- Cursor-based message pagination (never loads a whole conversation at once)
-- Reconnect sync: fetches only messages newer than the last known cursor
-- Messages are stored server-side, so offline recipients receive them on return
+- Cursor-based message pagination + reconnect sync (only newer messages are fetched)
+- Unread counts per conversation; messages are stored server-side so offline recipients receive them on return
 
 ---
 
@@ -25,20 +28,20 @@ A small real-time chat app: **Node/Express + MongoDB + Socket.IO** backend with 
 quickchat/
 ├─ package.json            root scripts (concurrently)
 ├─ server/                 Express + Socket.IO API (CommonJS)
-│  ├─ server.js            HTTP + Socket.IO bootstrap
+│  ├─ server.js            HTTP + Socket.IO bootstrap (CORS, shutdown, JWT guard)
 │  ├─ config/db.js         Mongoose connection
-│  ├─ models/              User, Message schemas + indexes
-│  ├─ routes/              health, users, messages (cursor pagination)
-│  ├─ sockets/chat.socket.js  real-time handlers
-│  ├─ middleware/error.js  asyncHandler, 404, error handler
-│  ├─ utils/               conversation, serialize, cursor
+│  ├─ models/              User, ChatRequest, Conversation, Message
+│  ├─ routes/              health, auth, users, requests, conversations
+│  ├─ sockets/chat.socket.js  authenticated real-time handlers
+│  ├─ middleware/          auth (JWT), error, rateLimit
+│  ├─ utils/               conversation, token, username, relationship, serialize, cursor
 │  ├─ presence.js          in-memory per-user socket registry
-│  └─ scripts/             receipts, presence, reliability tests
+│  └─ scripts/audit.test.js   end-to-end auth/requests/messaging/presence suite
 └─ mobile/                 Expo + expo-router app (ESM/JSX)
-   ├─ app/                 screens (_layout, index, users, chat/[id])
-   ├─ hooks/               useIdentity, useChatSocket, useChat
-   ├─ components/          MessageBubble, MessageComposer, OnlineDot
-   ├─ services/            config, api, socket
+   ├─ app/                 screens (index/auth, chats, search, requests, profile, chat/[id])
+   ├─ hooks/               useIdentity (auth), useChatSocket, useChat
+   ├─ components/          MessageBubble, MessageComposer (emoji bar), OnlineDot
+   ├─ services/            config, api (Bearer token), socket (token handshake)
    └─ utils/               uuid, presence
 ```
 
@@ -54,6 +57,7 @@ npm install            # installs root + server + mobile (postinstall)
 npm run dev            # runs backend (nodemon) + Expo together
 npm run server         # backend only  -> http://localhost:5000
 npm run mobile         # Expo dev server only
+npm test               # end-to-end backend suite (server must be running)
 ```
 
 Backend only:
@@ -76,20 +80,18 @@ npm run ios            # open on iOS
 npm run web            # web build
 ```
 
-Tests (server must be running; see env below):
+### Tests
+
+`server/scripts/audit.test.js` boots **no** server of its own — start the backend first, then run it against that URL:
 
 ```bash
 cd server
-npm run test:receipts     # sent/delivered/read + idempotency/ownership
-npm run test:presence     # online/offline, grace, snapshot
-npm run test:reliability  # duplicates, offline delivery, reconnect, pagination, races, errors
+npm run dev                                  # or: npm start
+# in another shell:
+QUICKCHAT_URL=http://localhost:5055 npm run test:audit
 ```
 
-Point tests at a non-default port with `QUICKCHAT_URL`:
-
-```bash
-QUICKCHAT_URL=http://localhost:5055 npm run test:reliability
-```
+The suite (47 checks) covers: account creation/login/token rules, profile edits, user search, request creation/accept/reject and their authorization rules, messaging gating, delivery/read receipts, idempotent resend, offline delivery, non-participant access denial, cursor pagination, presence (multi-socket + grace), and rejection of unauthenticated socket connections.
 
 ---
 
@@ -97,16 +99,18 @@ QUICKCHAT_URL=http://localhost:5055 npm run test:reliability
 
 Copy `server/.env.example` to `server/.env` and adjust (`.env` is git-ignored):
 
-| Variable             | Default                                     | Purpose                                          |
-| -------------------- | ------------------------------------------- | ------------------------------------------------ |
-| `PORT`               | `5000`                                      | HTTP + Socket.IO port                            |
-| `MONGO_URI`          | `mongodb://127.0.0.1:27017/quickchat`       | MongoDB connection string                        |
-| `CLIENT_ORIGIN`      | `*`                                         | CORS origin for REST and Socket.IO               |
-| `PRESENCE_GRACE_MS`  | `5000`                                      | Delay before marking a user offline (anti-flicker) |
+| Variable            | Default                                 | Purpose                                            |
+| ------------------- | --------------------------------------- | -------------------------------------------------- |
+| `PORT`              | `5000`                                  | HTTP + Socket.IO port                              |
+| `MONGO_URI`         | `mongodb://127.0.0.1:27017/quickchat`   | MongoDB connection string                          |
+| `CLIENT_ORIGIN`     | `*`                                     | CORS origin(s); comma-separated list, or `*`       |
+| `JWT_SECRET`        | *(dev fallback)*                        | **Required in production.** Signing secret         |
+| `JWT_EXPIRES_IN`    | `30d`                                   | Token lifetime                                      |
+| `PRESENCE_GRACE_MS` | `5000`                                  | Delay before marking a user offline (anti-flicker) |
 
 Mobile (Expo public env, optional): `EXPO_PUBLIC_API_URL` overrides the auto-detected backend URL.
 
-**Secrets:** no credentials are committed. `.env` is ignored; only `.env.example` is tracked. The Mongo URI may contain credentials — keep it in the environment, never in source.
+**Secrets:** no credentials are committed. `.env` is ignored; only `.env.example` is tracked. Set a long random `JWT_SECRET` in production — the server **refuses to start** with `NODE_ENV=production` unless one is provided.
 
 ---
 
@@ -133,7 +137,7 @@ MongoDB must be reachable from the backend host at `MONGO_URI`.
 ## Backend deployment
 
 1. Provision MongoDB (Atlas or self-hosted) and set `MONGO_URI`.
-2. Set `PORT`, `CLIENT_ORIGIN` (your app/site origin, not `*`), and `PRESENCE_GRACE_MS`.
+2. Set `PORT`, `CLIENT_ORIGIN` (your app/site origin, not `*`), `JWT_SECRET`, and `PRESENCE_GRACE_MS`.
 3. Install and start:
 
    ```bash
@@ -174,42 +178,43 @@ eas build --platform android --profile preview
 
 ## Testing checklist (manual, two devices)
 
-Run two app sessions (two phones/emulators) signed in as different names.
+Register two accounts (e.g. `alice`, `bob`) on two app sessions.
 
+- Search for the other account, **send a request**; the other device sees it under **Requests**.
+- Try to open a chat before acceptance → messaging is blocked; after **Accept**, the conversation appears for both.
 - Send messages **simultaneously** from both — no duplicates, correct order.
-- Observe ticks: ✓ sent, ✓✓ delivered, ✓✓ blue read.
+- Observe ticks: ✓ sent, ✓✓ delivered, ✓✓ blue read; unread badge on the chats list.
 - Background one app → it goes offline (after grace); foreground → online again.
 - Kill Wi-Fi on one device → sends show a retryable failure, then flush on reconnect.
 - Send while the other device is offline → message appears when it returns.
 - Kill/restart the backend → clients reconnect and resync without losing messages.
-- Server logs / MongoDB show each message exactly once.
+- Edit your display name in **Profile**; it updates on the other device.
+- Sign out → the session is cleared and the sign-in screen returns.
 
-Automated equivalents live in `server/scripts/`.
+Automated equivalent: `server/scripts/audit.test.js`.
 
 ---
 
 ## Data model & reliability notes
 
+- `User` has a unique `username` and a `passwordHash` (`select:false`); public serializers never expose it.
+- `ChatRequest` (`pairKey` unique) tracks `pending / accepted / rejected`; `Conversation` (`pairKey` unique) exists only after acceptance.
 - `Message` is idempotent via unique index `{ senderId, clientMessageId }`; duplicate sends return the existing document.
 - Status transitions use atomic conditional updates, so concurrent delivered/read cannot regress.
 - Message queries are indexed by `{ conversationId, createdAt, _id }` (keyset pagination) and `{ recipientId, status }`.
-- Socket payloads are validated (ObjectId shape, self-send, recipient existence, non-empty text, message ownership).
-- REST errors return JSON `{ message, code }` with a central handler.
+- Socket connections require a valid JWT (`handshake.auth.token`); identity is taken from the token, never the client payload.
+- REST errors return JSON `{ message, code }` with a central handler; rate limiters guard auth and search.
 
 ---
 
-## Security limitations
+## Security notes
 
-This version is **not production-secure** and must not be used for sensitive data.
+Authentication and authorization are implemented, but this is still **not** a hardened production service.
 
-- **No authentication or authorization.** Any client can claim any `userId` via `user:register`; there is no token, session, or password.
-- **No transport security by default.** Run behind HTTPS/WSS; plain HTTP is used for local dev.
-- **CORS defaults to `*`.** Restrict `CLIENT_ORIGIN` before deploying.
-- **No rate limiting** on REST or Socket.IO — vulnerable to spam/abuse.
-- **No message encryption** at rest or in transit beyond the transport layer.
-- **No user enumeration protection**; the full user list is publicly readable.
-- **Presence is in-memory and unauthenticated**; multi-instance deployments need a shared adapter.
-- **Input validation is basic** (length/pattern/id checks), not a full sanitization policy.
-- **No audit logging, blocklists, or abuse reporting.**
+- **Implemented:** bcrypt password hashing, JWT sessions, `requireAuth` on all data routes, per-socket JWT handshake auth, relationship-gated messaging, participant checks on history/receipts, rate limiting on auth/search, CORS configurable, basic security headers, `middleware/error.js` central error handling.
+- **Still missing for production:** HTTPS/WSS termination (run behind a reverse proxy), refresh-token rotation / revocation, email or phone verification, password reset, account lockout, CSRF considerations for web clients, blocklists/abuse reporting, audit logging, and stricter input sanitization.
+- **CORS** defaults to `*`; restrict `CLIENT_ORIGIN` before deploying.
+- **Presence is in-memory**; multi-instance deployments need a shared Socket.IO adapter.
+- **No message encryption** beyond the transport layer.
 
-Treat QuickChat as a learning/demo project. Before production, add real auth (e.g., tokens/OTP), TLS, strict CORS, rate limiting, and access-control checks on every conversation and message.
+Treat QuickChat as a learning/demo project. Before production, add the items above and review the authorization checks on every conversation and message path.

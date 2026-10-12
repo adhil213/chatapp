@@ -15,7 +15,10 @@ export default function RootLayout() {
           }}
         >
           <Stack.Screen name="index" options={{ title: 'QuickChat' }} />
-          <Stack.Screen name="users" options={{ title: 'People' }} />
+          <Stack.Screen name="chats" options={{ title: 'Chats' }} />
+          <Stack.Screen name="search" options={{ title: 'Search people' }} />
+          <Stack.Screen name="requests" options={{ title: 'Requests' }} />
+          <Stack.Screen name="profile" options={{ title: 'Profile' }} />
           <Stack.Screen name="chat/[id]" options={{ title: 'Chat' }} />
         </Stack>
       </ChatSocketProvider>

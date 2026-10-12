@@ -1,13 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useIdentity } from './useIdentity';
-import { connectSocket, emitWithAck } from '../services/socket';
+import { connectSocket, emitWithAck, disconnectSocket } from '../services/socket';
 
 const ChatSocketContext = createContext(null);
 
 export function ChatSocketProvider({ children }) {
-  const { identity } = useIdentity();
-  const selfId = identity ? identity.id : null;
+  const { user, token, signOut } = useIdentity();
+  const selfId = user ? user._id : null;
 
   const [status, setStatus] = useState('connecting');
   const [ready, setReady] = useState(false);
@@ -16,6 +16,9 @@ export function ChatSocketProvider({ children }) {
   const listenersRef = useRef(new Set());
   const joinedRef = useRef(new Set());
   const socketRef = useRef(null);
+  const signOutRef = useRef(signOut);
+
+  signOutRef.current = signOut;
 
   const emitToListeners = useCallback((event) => {
     for (const listener of listenersRef.current) {
@@ -83,38 +86,31 @@ export function ChatSocketProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    if (!selfId) {
+    if (!token) {
+      disconnectSocket();
+      socketRef.current = null;
+      joinedRef.current.clear();
       setStatus('connecting');
       setReady(false);
+      setPresence({});
       return undefined;
     }
 
     let active = true;
-    const socket = connectSocket();
+    const socket = connectSocket(token);
     socketRef.current = socket;
 
-    const acknowledgeDelivered = (messageId) => {
-      emitWithAck(socket, 'message:delivered', { messageId }).catch(() => {});
-    };
+    const onConnect = () => {
+      if (!active) return;
 
-    const onConnect = async () => {
       setStatus('connected');
+      setReady(true);
 
-      try {
-        await emitWithAck(socket, 'user:register', { userId: selfId });
-
-        if (!active) return;
-
-        setReady(true);
-
-        for (const otherId of joinedRef.current) {
-          emitWithAck(socket, 'conversation:join', { otherId }).catch(() => {});
-        }
-
-        emitToListeners({ type: 'ready' });
-      } catch (err) {
-        console.warn('[socket] register failed', err.message);
+      for (const otherId of joinedRef.current) {
+        emitWithAck(socket, 'conversation:join', { otherId }).catch(() => {});
       }
+
+      emitToListeners({ type: 'ready' });
     };
 
     const onDisconnect = () => {
@@ -124,8 +120,15 @@ export function ChatSocketProvider({ children }) {
       emitToListeners({ type: 'connection', status: 'disconnected' });
     };
 
-    const onConnectError = () => {
+    const onConnectError = (err) => {
       if (!active) return;
+
+      if (err && /unauthorized/i.test(err.message || '')) {
+        emitToListeners({ type: 'unauthorized' });
+        signOutRef.current();
+        return;
+      }
+
       setStatus('disconnected');
       setReady(false);
       emitToListeners({ type: 'connection', status: 'disconnected' });
@@ -141,10 +144,6 @@ export function ChatSocketProvider({ children }) {
       if (!active) return;
 
       emitToListeners({ type: 'message', message });
-
-      if (message.recipientId === selfId) {
-        acknowledgeDelivered(message._id);
-      }
     };
 
     const onStatus = (payload) => {
@@ -162,6 +161,21 @@ export function ChatSocketProvider({ children }) {
       applyPresenceSnapshot(payload);
     };
 
+    const onRequestNew = (payload) => {
+      if (!active) return;
+      emitToListeners({ type: 'request:new', request: payload });
+    };
+
+    const onRequestUpdated = (payload) => {
+      if (!active) return;
+      emitToListeners({ type: 'request:updated', ...payload });
+    };
+
+    const onConversationNew = (payload) => {
+      if (!active) return;
+      emitToListeners({ type: 'conversation:new', ...payload });
+    };
+
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
     socket.on('connect_error', onConnectError);
@@ -169,6 +183,9 @@ export function ChatSocketProvider({ children }) {
     socket.on('message:status', onStatus);
     socket.on('presence:update', onPresence);
     socket.on('presence:snapshot', onPresenceSnapshot);
+    socket.on('request:new', onRequestNew);
+    socket.on('request:updated', onRequestUpdated);
+    socket.on('conversation:new', onConversationNew);
     socket.io.on('reconnect_attempt', onReconnectAttempt);
 
     if (socket.connected) {
@@ -186,12 +203,18 @@ export function ChatSocketProvider({ children }) {
       socket.off('message:status', onStatus);
       socket.off('presence:update', onPresence);
       socket.off('presence:snapshot', onPresenceSnapshot);
+      socket.off('request:new', onRequestNew);
+      socket.off('request:updated', onRequestUpdated);
+      socket.off('conversation:new', onConversationNew);
       socket.io.off('reconnect_attempt', onReconnectAttempt);
     };
-  }, [selfId, emitToListeners, applyPresenceUpdate, applyPresenceSnapshot]);
+  }, [token, emitToListeners, applyPresenceUpdate, applyPresenceSnapshot]);
 
   const joinConversation = useCallback(async (otherId) => {
-    const socket = socketRef.current || connectSocket();
+    const socket = socketRef.current || (token ? connectSocket(token) : null);
+
+    if (!socket) return null;
+
     socketRef.current = socket;
     joinedRef.current.add(otherId);
 
@@ -202,11 +225,14 @@ export function ChatSocketProvider({ children }) {
     } catch (err) {
       return null;
     }
-  }, []);
+  }, [token]);
 
   const sendMessage = useCallback((payload) => {
-    const socket = socketRef.current || connectSocket();
-    socketRef.current = socket;
+    const socket = socketRef.current;
+
+    if (!socket) {
+      return Promise.resolve({ ok: false, error: 'OFFLINE' });
+    }
 
     return emitWithAck(socket, 'message:send', payload);
   }, []);
@@ -233,6 +259,7 @@ export function ChatSocketProvider({ children }) {
     () => ({
       status,
       ready,
+      selfId,
       presence,
       getPresence,
       seedPresence,
@@ -245,6 +272,7 @@ export function ChatSocketProvider({ children }) {
     [
       status,
       ready,
+      selfId,
       presence,
       getPresence,
       seedPresence,

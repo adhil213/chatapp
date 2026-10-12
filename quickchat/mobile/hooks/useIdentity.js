@@ -2,12 +2,15 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const STORAGE_KEY = 'quickchat.identity';
+import * as api from '../services/api';
+
+const STORAGE_KEY = 'quickchat.session';
 
 const IdentityContext = createContext(null);
 
 export function IdentityProvider({ children }) {
-  const [identity, setIdentity] = useState(null);
+  const [user, setUser] = useState(null);
+  const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -16,11 +19,21 @@ export function IdentityProvider({ children }) {
     (async () => {
       try {
         const raw = await AsyncStorage.getItem(STORAGE_KEY);
-        if (active && raw) {
-          setIdentity(JSON.parse(raw));
+
+        if (raw) {
+          const session = JSON.parse(raw);
+
+          if (session && session.token && session.user) {
+            api.setAuthToken(session.token);
+
+            if (active) {
+              setToken(session.token);
+              setUser(session.user);
+            }
+          }
         }
       } catch (err) {
-        console.warn('[identity] failed to read stored identity', err);
+        console.warn('[auth] failed to restore session', err);
       } finally {
         if (active) {
           setLoading(false);
@@ -33,20 +46,65 @@ export function IdentityProvider({ children }) {
     };
   }, []);
 
-  const signIn = useCallback(async (user) => {
-    const value = { id: String(user._id), displayName: user.displayName };
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(value));
-    setIdentity(value);
+  const persist = useCallback(async (nextToken, nextUser) => {
+    api.setAuthToken(nextToken);
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ token: nextToken, user: nextUser }));
+    setToken(nextToken);
+    setUser(nextUser);
   }, []);
 
+  const signIn = useCallback(
+    async ({ username, password }) => {
+      const result = await api.login({ username, password });
+
+      await persist(result.token, result.user);
+
+      return result.user;
+    },
+    [persist]
+  );
+
+  const signUp = useCallback(
+    async ({ username, displayName, password }) => {
+      const result = await api.register({ username, displayName, password });
+
+      await persist(result.token, result.user);
+
+      return result.user;
+    },
+    [persist]
+  );
+
   const signOut = useCallback(async () => {
+    api.setAuthToken(null);
     await AsyncStorage.removeItem(STORAGE_KEY);
-    setIdentity(null);
+    setToken(null);
+    setUser(null);
+  }, []);
+
+  const updateProfile = useCallback(async ({ displayName }) => {
+    const updated = await api.updateMe({ displayName });
+
+    setUser(updated);
+
+    try {
+      const raw = await AsyncStorage.getItem(STORAGE_KEY);
+
+      if (raw) {
+        const session = JSON.parse(raw);
+        session.user = updated;
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+      }
+    } catch (err) {
+      console.warn('[auth] failed to persist profile update', err);
+    }
+
+    return updated;
   }, []);
 
   const value = useMemo(
-    () => ({ identity, loading, signIn, signOut }),
-    [identity, loading, signIn, signOut]
+    () => ({ user, token, loading, signIn, signUp, signOut, updateProfile, setUser }),
+    [user, token, loading, signIn, signUp, signOut, updateProfile]
   );
 
   return <IdentityContext.Provider value={value}>{children}</IdentityContext.Provider>;

@@ -215,9 +215,9 @@ async function main() {
   const offlineMsg = await send(aliceSocket, bob._id, 'while offline', `off_${s}`);
   check('message to offline recipient is accepted', offlineMsg.ok === true);
 
-  for (let i = 0; i < 12; i += 1) {
-    await send(aliceSocket, bob._id, `page ${i}`, `pg_${i}_${s}`);
-  }
+  await Promise.all(
+    Array.from({ length: 12 }, (_, i) => send(aliceSocket, bob._id, `page ${i}`, `pg_${i}_${s}`))
+  );
 
   const page1 = await api(`/api/conversations/${bob._id}/messages?limit=5`, { token: aliceToken });
   check('page 1 respects limit', page1.body.messages.length === 5);
@@ -252,7 +252,7 @@ async function main() {
   check('one socket disconnecting keeps user online', offlineObserved() === 0);
 
   extraBob.disconnect();
-  await sleep(GRACE_MS + 1500);
+  await sleep(GRACE_MS + 700);
   check('final disconnect marks user offline after grace', offlineObserved() === 1);
 
   const bobProfile = await api(`/api/users/${bob._id}`, { token: aliceToken });
