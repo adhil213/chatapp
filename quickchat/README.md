@@ -156,23 +156,49 @@ MongoDB must be reachable from the backend host at `MONGO_URI`.
 
 ## Building the Expo app
 
+### Local development
+
 ```bash
 cd mobile
-npx expo start            # dev
-npx expo run:android      # native build/run
-npx expo run:ios          # native build/run
+npm install
+cp .env.example .env       # then set EXPO_PUBLIC_API_URL to your backend
+npx expo start             # dev server
+npx expo run:android       # native build/run
+npx expo run:ios
 ```
 
-EAS builds (recommended for distribution):
+The backend URL comes from `EXPO_PUBLIC_API_URL` (`services/config.js`); the Expo CLI loads it from `mobile/.env` locally. **`.env` is git-ignored**, so it is **not** uploaded to cloud builds.
+
+### Configuration for EAS cloud builds
+
+Expo inlines every `EXPO_PUBLIC_*` variable into the JS bundle **at build time**. Since the developer's `.env` never reaches the cloud builder, the URL must be supplied by the build environment. This project sets it per profile in `eas.json`:
+
+```json
+{ "build": { "preview": { "env": { "EXPO_PUBLIC_API_URL": "https://chatapp-w9n1.onrender.com" } } } }
+```
+
+To change it without editing `eas.json`, use a **hosted environment variable** in the Expo dashboard — *Project → Configuration → Environment Variables → environment `preview` → add `EXPO_PUBLIC_API_URL`* — or the CLI:
+
+```bash
+eas env:create --name EXPO_PUBLIC_API_URL \
+  --value https://chatapp-w9n1.onrender.com \
+  --environment preview --visibility plaintext
+```
+
+`EXPO_PUBLIC_*` values are **not secret**: they are embedded in the shipped bundle. Never put `MONGO_URI`, `JWT_SECRET`, or any server credential here.
+
+### Android APK (internal distribution)
 
 ```bash
 npm install -g eas-cli
 eas login
-eas build --platform android     # or ios / all
+eas init                   # link this folder to an Expo project (first time only)
 eas build --platform android --profile preview
 ```
 
-`app.json` defines the slug (`quickchat`), scheme (`quickchat`), Android package (`com.quickchat.app`), and iOS support. Configure `eas.json` profiles before your first cloud build.
+The `preview` profile builds an installable **APK** (`distribution: internal`); `production` builds an AAB for the Play Store (`eas.json`). On the first build EAS offers to generate an Android keystore — accept it (it is stored by Expo; back it up). When the build finishes, EAS prints a URL + QR code; share that link with friends, or download the `.apk` and open it on the phone (allow "install from unknown sources").
+
+`app.json` defines the name (`QuickChat`), slug (`quickchat`), scheme (`quickchat`), Android package (`com.quickchat.app`), and iOS bundle id (`com.quickchat.app`).
 
 ---
 

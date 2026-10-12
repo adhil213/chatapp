@@ -8,20 +8,30 @@
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.quickchat.app"
     },
     "android": {
       "package": "com.quickchat.app",
-      "edgeToEdgeEnabled": true
+      "versionCode": 1
     },
     "web": {
       "bundler": "metro"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": false
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "144b4c35-0a02-4d59-b935-242e30f4f310"
+      }
     }
   }
 }
