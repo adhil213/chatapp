@@ -1,12 +1,7 @@
+import { memo } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-function formatTime(value) {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) return '';
-
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
+import { formatMessageTime } from '../utils/datetime';
 
 function Ticks({ status }) {
   if (status === 'read') {
@@ -24,7 +19,7 @@ function Ticks({ status }) {
   return null;
 }
 
-export default function MessageBubble({ message, isMine, onRetry }) {
+function MessageBubble({ message, isMine, onRetry }) {
   const failed = message.status === 'failed';
   const sending = !failed && (message.pending || message.status === 'sending');
 
@@ -32,7 +27,7 @@ export default function MessageBubble({ message, isMine, onRetry }) {
     ? 'Not sent — tap to retry'
     : sending
       ? 'Sending…'
-      : formatTime(message.createdAt);
+      : formatMessageTime(message.createdAt);
 
   const content = (
     <View style={[styles.bubble, isMine ? styles.mine : styles.theirs, failed && styles.failed]}>
@@ -120,3 +115,5 @@ const styles = StyleSheet.create({
     color: '#2563eb',
   },
 });
+
+export default memo(MessageBubble);

@@ -1,6 +1,7 @@
+import { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-export default function OnlineDot({ online, size = 12, bordered = false }) {
+function OnlineDot({ online, size = 12, bordered = false }) {
   const dimension = {
     width: size,
     height: size,
@@ -34,3 +35,5 @@ const styles = StyleSheet.create({
     borderColor: '#ffffff',
   },
 });
+
+export default memo(OnlineDot);

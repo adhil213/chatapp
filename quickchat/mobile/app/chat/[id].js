@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -19,7 +20,8 @@ import { useChat } from '../../hooks/useChat';
 import { useChatSocket } from '../../hooks/useChatSocket';
 import { useNotepad } from '../../hooks/useNotepad';
 import { useIdentity } from '../../hooks/useIdentity';
-import { getUser } from '../../services/api';
+import { clearConversation, getUser } from '../../services/api';
+import { formatDayLabel, localDayKey } from '../../utils/datetime';
 import { presenceLabel } from '../../utils/presence';
 
 const CONNECTION_LABEL = {
@@ -36,7 +38,7 @@ export default function ChatScreen() {
   const { user } = useIdentity();
   const { notepadMode, unlocked } = useNotepad();
   const { status, presence, seedPresence } = useChatSocket();
-  const { messages, loading, loadingMore, hasMore, error, sendText, retry, loadOlder } =
+  const { messages, loading, loadingMore, hasMore, error, sendText, retry, loadOlder, clearChat } =
     useChat(recipientId);
   const [retrying, setRetrying] = useState(false);
 
@@ -54,7 +56,23 @@ export default function ChatScreen() {
     };
   }, [recipientId, seedPresence]);
 
-  const data = useMemo(() => [...messages].reverse(), [messages]);
+  const data = useMemo(() => {
+    const items = [];
+    let lastDay = null;
+
+    for (const message of messages) {
+      const day = localDayKey(message.createdAt);
+
+      if (day && day !== lastDay) {
+        items.push({ type: 'day', id: `day-${day}`, at: message.createdAt });
+        lastDay = day;
+      }
+
+      items.push({ type: 'message', id: message._id || message.clientMessageId, message });
+    }
+
+    return items.reverse();
+  }, [messages]);
 
   const selfId = user ? user._id : null;
   const banner = CONNECTION_LABEL[status];
@@ -62,6 +80,28 @@ export default function ChatScreen() {
   const friendEntry = presence[recipientId] || null;
   const friendOnline = Boolean(friendEntry && friendEntry.online);
   const friendStatus = friendOnline ? 'Online' : presenceLabel(friendEntry);
+
+  const confirmClear = () => {
+    Alert.alert(
+      'Clear conversation',
+      'This permanently deletes every message in this chat for both people. It cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await clearConversation(recipientId);
+              clearChat();
+            } catch (err) {
+              Alert.alert('Could not clear chat', String((err && err.message) || err));
+            }
+          },
+        },
+      ]
+    );
+  };
 
   const retryAll = async () => {
     setRetrying(true);
@@ -81,7 +121,19 @@ export default function ChatScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <Stack.Screen options={{ title: String(friend) }} />
+      <Stack.Screen
+        options={{
+          title: String(friend),
+          headerRight: () => (
+            <TouchableOpacity
+              onPress={confirmClear}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <Text style={styles.headerAction}>Clear</Text>
+            </TouchableOpacity>
+          ),
+        }}
+      />
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -108,10 +160,14 @@ export default function ChatScreen() {
           <FlatList
             data={data}
             inverted
-            keyExtractor={(item) => item._id || item.clientMessageId}
+            keyExtractor={(item) => item.id}
             contentContainerStyle={styles.list}
             onEndReached={hasMore ? loadOlder : undefined}
             onEndReachedThreshold={0.3}
+            initialNumToRender={20}
+            maxToRenderPerBatch={20}
+            windowSize={11}
+            removeClippedSubviews={Platform.OS === 'android'}
             ListFooterComponent={
               loadingMore ? (
                 <View style={styles.footer}>
@@ -119,9 +175,19 @@ export default function ChatScreen() {
                 </View>
               ) : null
             }
-            renderItem={({ item }) => (
-              <MessageBubble message={item} isMine={item.senderId === selfId} onRetry={retry} />
-            )}
+            renderItem={({ item }) =>
+              item.type === 'day' ? (
+                <View style={styles.dayRow}>
+                  <Text style={styles.dayText}>{formatDayLabel(item.at)}</Text>
+                </View>
+              ) : (
+                <MessageBubble
+                  message={item.message}
+                  isMine={item.message.senderId === selfId}
+                  onRetry={retry}
+                />
+              )
+            }
             ListEmptyComponent={
               error ? (
                 <View style={styles.empty}>
@@ -222,5 +288,24 @@ const styles = StyleSheet.create({
     color: '#b91c1c',
     fontWeight: '700',
     fontSize: 13,
+  },
+  headerAction: {
+    color: '#b91c1c',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  dayRow: {
+    alignItems: 'center',
+    marginVertical: 10,
+  },
+  dayText: {
+    fontSize: 11,
+    color: '#6b7280',
+    backgroundColor: '#e5e7eb',
+    borderRadius: 999,
+    overflow: 'hidden',
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    fontWeight: '600',
   },
 });
