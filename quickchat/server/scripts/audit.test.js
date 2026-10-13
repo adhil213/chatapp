@@ -277,6 +277,50 @@ async function main() {
   });
   check('unlock with correct key succeeds', goodUnlock.status === 200 && goodUnlock.body.ok === true);
 
+  const noAuthReset = await api('/api/vault/reset', {
+    method: 'POST',
+    body: { secretKey: 'newvaultkey1' },
+  });
+  check('reset without a session is rejected', noAuthReset.status === 401);
+
+  const badReset = await api('/api/vault/reset', {
+    method: 'POST',
+    token: aliceToken,
+    body: { secretKey: 'short' },
+  });
+  check('reset rejects an invalid secret key', badReset.status === 400);
+
+  const reset = await api('/api/vault/reset', {
+    method: 'POST',
+    token: aliceToken,
+    body: { secretKey: 'newvaultkey1' },
+  });
+  check(
+    'authenticated reset needs no password',
+    reset.status === 200 && reset.body.user.hasSecretKey === true
+  );
+
+  const oldKeyAfterReset = await api('/api/vault/unlock', {
+    method: 'POST',
+    token: aliceToken,
+    body: { secretKey: 'vaultkey123' },
+  });
+  check('old key no longer unlocks after reset', oldKeyAfterReset.status === 401);
+
+  const newKeyAfterReset = await api('/api/vault/unlock', {
+    method: 'POST',
+    token: aliceToken,
+    body: { secretKey: 'newvaultkey1' },
+  });
+  check('new key unlocks after reset', newKeyAfterReset.status === 200);
+
+  const bobUntouched = await api('/api/vault/unlock', {
+    method: 'POST',
+    token: bobToken,
+    body: { secretKey: 'vaultkey123' },
+  });
+  check('reset only affects the current user', bobUntouched.status === 200);
+
   const noteCreate = await api('/api/notes', {
     method: 'POST',
     token: aliceToken,
@@ -307,6 +351,53 @@ async function main() {
 
   const noteDelete = await api(`/api/notes/${noteId}`, { method: 'DELETE', token: aliceToken });
   check('owner can delete a note', noteDelete.status === 200);
+
+  const longTitle = 'a'.repeat(127) + '1';
+  const longNote = await api('/api/notes', {
+    method: 'POST',
+    token: aliceToken,
+    body: { title: longTitle, content: '' },
+  });
+  check(
+    'a 128-character note title is accepted',
+    longNote.status === 201 && longNote.body.note.title.length === 128
+  );
+  await api(`/api/notes/${longNote.body.note._id}`, { method: 'DELETE', token: aliceToken });
+
+  const tooLongNote = await api('/api/notes', {
+    method: 'POST',
+    token: aliceToken,
+    body: { title: 'a'.repeat(128) + '1', content: '' },
+  });
+  check('a 129-character note title is rejected', tooLongNote.status === 400);
+
+  console.log('\nD3. Clear chats');
+
+  const clearOther = await api(`/api/conversations/${bob._id}/messages`, {
+    method: 'DELETE',
+    token: carolToken,
+  });
+  check('non-participant cannot clear a conversation', clearOther.status === 403);
+
+  const bobSocket2 = await connect(bobToken);
+
+  const clearedP = waitFor(bobSocket2, 'conversation:cleared', (e) => e.scope === 'conversation');
+  const clearOne = await api(`/api/conversations/${bob._id}/messages`, {
+    method: 'DELETE',
+    token: aliceToken,
+  });
+  check('participant can clear a conversation', clearOne.status === 200 && clearOne.body.ok === true);
+  check('partner receives the clear event', (await clearedP).scope === 'conversation');
+
+  const afterClear = await api(`/api/conversations/${bob._id}/messages`, { token: aliceToken });
+  check('cleared conversation has no messages', afterClear.body.messages.length === 0);
+
+  const allClearedP = waitFor(aliceSocket, 'conversation:cleared', (e) => e.scope === 'all');
+  const clearAll = await api('/api/conversations/messages', { method: 'DELETE', token: aliceToken });
+  check('user can clear all conversations', clearAll.status === 200 && clearAll.body.ok === true);
+  check('user receives the clear-all event', (await allClearedP).scope === 'all');
+
+  bobSocket2.disconnect();
 
   console.log('\nE. Unauthenticated socket');
 
