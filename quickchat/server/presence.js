@@ -44,4 +44,8 @@ function onlineUserIds() {
   return Array.from(connections.keys());
 }
 
-module.exports = { add, remove, isOnline, onlineUserIds };
+function drop(userId) {
+  connections.delete(String(userId));
+}
+
+module.exports = { add, remove, isOnline, onlineUserIds, drop };

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -15,6 +16,7 @@ import { Redirect, useRouter } from 'expo-router';
 
 import { useIdentity } from '../hooks/useIdentity';
 import { useNotepad } from '../hooks/useNotepad';
+import { clearNotesCache } from '../hooks/useNotes';
 import * as api from '../services/api';
 
 function validateSecretKey(value) {
@@ -28,7 +30,7 @@ function validateSecretKey(value) {
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { user, updateProfile, signOut, applyUser } = useIdentity();
+  const { user, updateProfile, signOut, deleteAccount, applyUser } = useIdentity();
   const { notepadMode, unlocked, markUnlocked } = useNotepad();
 
   const [displayName, setDisplayName] = useState(user ? user.displayName : '');
@@ -53,6 +55,9 @@ export default function ProfileScreen() {
   const [keySaving, setKeySaving] = useState(false);
   const [keyMessage, setKeyMessage] = useState(null);
   const [keyError, setKeyError] = useState(null);
+
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState(null);
 
   if (!user) {
     return (
@@ -197,6 +202,46 @@ export default function ProfileScreen() {
   const logout = async () => {
     await signOut();
     router.replace('/');
+  };
+
+  const removeAccount = async () => {
+    setDeleting(true);
+    setDeleteError(null);
+
+    try {
+      const userId = user._id;
+
+      await deleteAccount();
+      await clearNotesCache(userId);
+
+      router.replace('/');
+    } catch (err) {
+      setDeleting(false);
+      setDeleteError(err.message || 'Could not delete your account. Please try again.');
+    }
+  };
+
+  const confirmDelete = () => {
+    Alert.alert(
+      'Delete account?',
+      'This permanently deletes your account, your notes, and your chats. Chats will also disappear for the people you talked to. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete account',
+          style: 'destructive',
+          onPress: () =>
+            Alert.alert(
+              'Are you absolutely sure?',
+              'Your account and all of its data will be removed forever.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Delete forever', style: 'destructive', onPress: removeAccount },
+              ]
+            ),
+        },
+      ]
+    );
   };
 
   return (
@@ -357,6 +402,24 @@ export default function ProfileScreen() {
             </>
           )}
 
+          <View style={styles.divider} />
+
+          <Text style={styles.sectionTitle}>Danger zone</Text>
+          <Text style={styles.sectionSub}>
+            Deleting your account permanently removes your profile, your notes, and your chats.
+            This cannot be undone.
+          </Text>
+
+          {deleteError ? <Text style={styles.error}>{deleteError}</Text> : null}
+
+          <TouchableOpacity
+            style={[styles.dangerButton, deleting && styles.disabled]}
+            onPress={confirmDelete}
+            disabled={deleting}
+          >
+            <Text style={styles.dangerText}>{deleting ? 'Deleting…' : 'Delete account'}</Text>
+          </TouchableOpacity>
+
           <TouchableOpacity style={styles.signOut} onPress={logout}>
             <Text style={styles.signOutText}>Sign out</Text>
           </TouchableOpacity>
@@ -500,6 +563,20 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  dangerButton: {
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#b91c1c',
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 6,
+  },
+  dangerText: {
+    color: '#b91c1c',
     fontSize: 16,
     fontWeight: '700',
   },

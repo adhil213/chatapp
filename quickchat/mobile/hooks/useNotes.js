@@ -174,6 +174,14 @@ export function useNotes(userId, remote) {
   return { notes, loading, error, reload, saveNote, removeNote };
 }
 
+export async function clearNotesCache(userId) {
+  try {
+    await AsyncStorage.removeItem(storageKey(userId));
+  } catch (err) {
+    console.warn('[notes] failed to clear cached notes', err);
+  }
+}
+
 export async function migrateAnonymousNotes(userId) {
   if (!userId) return;
 

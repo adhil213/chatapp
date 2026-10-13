@@ -109,9 +109,26 @@ export function IdentityProvider({ children }) {
     [applyUser]
   );
 
+  const deleteAccount = useCallback(async () => {
+    await api.deleteAccount();
+
+    await signOut();
+  }, [signOut]);
+
   const value = useMemo(
-    () => ({ user, token, loading, signIn, signUp, signOut, updateProfile, applyUser, setUser }),
-    [user, token, loading, signIn, signUp, signOut, updateProfile, applyUser]
+    () => ({
+      user,
+      token,
+      loading,
+      signIn,
+      signUp,
+      signOut,
+      updateProfile,
+      deleteAccount,
+      applyUser,
+      setUser,
+    }),
+    [user, token, loading, signIn, signUp, signOut, updateProfile, deleteAccount, applyUser]
   );
 
   return <IdentityContext.Provider value={value}>{children}</IdentityContext.Provider>;

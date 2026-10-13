@@ -1,8 +1,14 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
 const User = require('../models/User');
+const Note = require('../models/Note');
+const Conversation = require('../models/Conversation');
+const Message = require('../models/Message');
+const ChatRequest = require('../models/ChatRequest');
 const presence = require('../presence');
+const { emitToUser, userRoom, getIo } = require('../realtime');
 const { validateUsername, validateDisplayName, normalizeUsername } = require('../utils/username');
 const { signToken } = require('../utils/token');
 const { asyncHandler, HttpError } = require('../middleware/error');
@@ -21,8 +27,93 @@ const authLimiter = createRateLimiter({
 
 const BCRYPT_ROUNDS = 12;
 
+const deleteLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  key: (req) => req.userId,
+  message: 'Too many attempts, please try again later',
+});
+
 function publicProfile(user) {
   return serializeSelfUser(user, presence.isOnline(user._id));
+}
+
+function isTransactionUnsupported(err) {
+  if (!err) return false;
+  if (err.code === 20 || err.code === 303) return true;
+
+  return /transaction numbers are only allowed|replica set member|does not support transactions/i.test(
+    String(err.message || '')
+  );
+}
+
+async function eraseUserData(userId, session) {
+  const opts = session ? { session } : undefined;
+
+  const conversations = await Conversation.find({ participants: userId })
+    .select('pairKey participants')
+    .session(session || null);
+
+  const pairKeys = conversations.map((conversation) => conversation.pairKey);
+
+  if (pairKeys.length > 0) {
+    await Message.deleteMany({ conversationId: { $in: pairKeys } }, opts);
+    await Conversation.deleteMany({ pairKey: { $in: pairKeys } }, opts);
+  }
+
+  await Note.deleteMany({ userId }, opts);
+  await ChatRequest.deleteMany({ $or: [{ requester: userId }, { recipient: userId }] }, opts);
+  await User.deleteOne({ _id: userId }, opts);
+
+  return conversations;
+}
+
+async function deleteAccountData(userId) {
+  const session = await mongoose.startSession();
+
+  try {
+    session.startTransaction();
+
+    const conversations = await eraseUserData(userId, session);
+
+    await session.commitTransaction();
+
+    return conversations;
+  } catch (err) {
+    if (session.inTransaction()) {
+      await session.abortTransaction().catch(() => {});
+    }
+
+    if (!isTransactionUnsupported(err)) {
+      throw err;
+    }
+
+    return eraseUserData(userId, null);
+  } finally {
+    session.endSession();
+  }
+}
+
+function announceAccountDeletion(userId, conversations) {
+  for (const conversation of conversations) {
+    const otherId = conversation.participants.find((id) => String(id) !== String(userId));
+
+    if (otherId) {
+      emitToUser(otherId, 'conversation:cleared', {
+        scope: 'conversation',
+        conversationId: conversation.pairKey,
+        userId: String(userId),
+      });
+    }
+  }
+
+  const io = getIo();
+
+  if (io) {
+    io.in(userRoom(userId)).disconnectSockets(true);
+  }
+
+  presence.drop(userId);
 }
 
 router.post(
@@ -130,6 +221,21 @@ router.patch(
     await req.user.save();
 
     return res.json({ user: publicProfile(req.user) });
+  })
+);
+
+router.delete(
+  '/me',
+  requireAuth,
+  deleteLimiter,
+  asyncHandler(async (req, res) => {
+    const userId = req.user._id;
+
+    const conversations = await deleteAccountData(userId);
+
+    announceAccountDeletion(userId, conversations);
+
+    return res.json({ ok: true });
   })
 );
 

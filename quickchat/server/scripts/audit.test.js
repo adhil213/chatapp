@@ -416,6 +416,100 @@ async function main() {
   }
   check('socket with an invalid token is rejected', rejected);
 
+  console.log('\nE. Account deletion');
+
+  const daveName = `dave_${s}`;
+  const erinName = `erin_${s}`;
+
+  const noAuthDelete = await api('/api/auth/me', { method: 'DELETE' });
+  check('delete without a session is rejected', noAuthDelete.status === 401);
+
+  const daveReg = await register(daveName, 'Dave');
+  const dave = daveReg.body.user;
+  const daveToken = daveReg.body.token;
+  const erinReg = await register(erinName, 'Erin');
+  const erin = erinReg.body.user;
+  const erinToken = erinReg.body.token;
+
+  const daveReq = await api('/api/requests', {
+    method: 'POST',
+    token: daveToken,
+    body: { userId: erin._id },
+  });
+  await api(`/api/requests/${daveReq.body.request._id}/accept`, { method: 'POST', token: erinToken });
+
+  const erinSocket = await connect(erinToken);
+  const daveSocket = await connect(daveToken);
+
+  const daveSend = await send(daveSocket, erin._id, 'see you', `bye_${s}`);
+  check('fixture: the account to delete can message', daveSend.ok === true);
+
+  const daveNote = await api('/api/notes', {
+    method: 'POST',
+    token: daveToken,
+    body: { title: 'temp', content: 'x' },
+  });
+  check('fixture: the account to delete can create a note', daveNote.status === 201);
+
+  const erinBefore = await api('/api/conversations', { token: erinToken });
+  check(
+    'partner sees the conversation before deletion',
+    erinBefore.body.conversations.some((c) => c.user._id === dave._id)
+  );
+
+  const clearedP2 = waitFor(erinSocket, 'conversation:cleared', (e) => e.userId === dave._id, 8000);
+
+  const daveDeleted = await api('/api/auth/me', { method: 'DELETE', token: daveToken });
+  check('user can delete their own account', daveDeleted.status === 200 && daveDeleted.body.ok === true);
+
+  const daveAfter = await api('/api/auth/me', { token: daveToken });
+  check('deleted token no longer authenticates', daveAfter.status === 401);
+
+  let daveDisconnected = !daveSocket.connected;
+  if (!daveDisconnected) {
+    await new Promise((resolve) => {
+      daveSocket.on('disconnect', () => {
+        daveDisconnected = true;
+        resolve();
+      });
+      setTimeout(resolve, 4000);
+    });
+  }
+  check('deleted user socket is disconnected', daveDisconnected);
+
+  check('partner receives the clear event', (await clearedP2).scope === 'conversation');
+
+  const erinAfter = await api('/api/conversations', { token: erinToken });
+  check(
+    'conversation is removed for the partner',
+    !erinAfter.body.conversations.some((c) => c.user._id === dave._id)
+  );
+
+  const orphan = await api(`/api/conversations/${dave._id}/messages`, { token: erinToken });
+  check(
+    'messages from the deleted user are gone',
+    orphan.status === 403 && orphan.body.code === 'NOT_CONNECTED'
+  );
+
+  const reReg = await register(daveName, 'Dave Again');
+  check('the username is free to register again', reReg.status === 201 && Boolean(reReg.body.token));
+
+  const dave2Token = reReg.body.token;
+  const dave2Convs = await api('/api/conversations', { token: dave2Token });
+  check('re-registered account starts with no chats', dave2Convs.body.conversations.length === 0);
+
+  const dave2Notes = await api('/api/notes', { token: dave2Token });
+  check('re-registered account starts with no notes', dave2Notes.body.notes.length === 0);
+
+  const erinStillThere = await api('/api/auth/me', { token: erinToken });
+  check(
+    'partner account is untouched',
+    erinStillThere.status === 200 && erinStillThere.body.user._id === erin._id
+  );
+
+  daveSocket.disconnect();
+  erinSocket.disconnect();
+
   aliceSocket.disconnect();
   carolSocket.disconnect();
   observer.disconnect();

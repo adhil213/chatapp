@@ -70,6 +70,10 @@ export async function updateMe({ displayName }) {
   return body.user;
 }
 
+export async function deleteAccount() {
+  return request('/api/auth/me', { method: 'DELETE' });
+}
+
 export async function searchUsers(q) {
   const params = new URLSearchParams({ q });
 

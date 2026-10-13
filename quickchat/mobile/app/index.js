@@ -254,7 +254,7 @@ export default function NotepadScreen() {
 
             <TextInput
               style={styles.titleInput}
-              placeholder="Title"
+              placeholder="Enter a note title"
               placeholderTextColor="#9ca3af"
               value={draft ? draft.title : ''}
               onChangeText={(value) => {
@@ -266,12 +266,6 @@ export default function NotepadScreen() {
               autoCorrect={false}
               editable={!saving}
             />
-
-            {canEnterKey ? (
-              <Text style={styles.titleHint}>
-                Enter your secret key as the title and press Save to open your chats.
-              </Text>
-            ) : null}
 
             <TextInput
               style={styles.contentInput}
@@ -451,12 +445,6 @@ const styles = StyleSheet.create({
     color: '#111827',
     paddingHorizontal: 16,
     paddingTop: 16,
-    paddingBottom: 8,
-  },
-  titleHint: {
-    fontSize: 12,
-    color: '#9ca3af',
-    paddingHorizontal: 16,
     paddingBottom: 8,
   },
   contentInput: {
