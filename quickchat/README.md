@@ -198,6 +198,23 @@ eas build --platform android --profile preview
 
 The `preview` profile builds an installable **APK** (`distribution: internal`); `production` builds an AAB for the Play Store (`eas.json`). On the first build EAS offers to generate an Android keystore — accept it (it is stored by Expo; back it up). When the build finishes, EAS prints a URL + QR code; share that link with friends, or download the `.apk` and open it on the phone (allow "install from unknown sources").
 
+### Release size (R8/ProGuard + resource shrinking)
+
+`app.json` enables `expo-build-properties` with `enableProguardInReleaseBuilds` and
+`enableShrinkResourcesInReleaseBuilds`, so **release** builds run R8 (code minification +
+shrinking) and strip unused Android resources. Debug/dev builds are unchanged.
+
+```bash
+cd mobile
+npx expo install expo-build-properties   # pinned in package.json ("~0.13.1")
+npx expo config --type public            # verify the plugin config resolves
+eas build --platform android --profile preview
+# then compare the produced .apk / .aab size against the previous build
+```
+
+The size reduction can only be confirmed by rebuilding; record the APK size delta before
+merging a build-config change.
+
 `app.json` defines the name (`QuickChat`), slug (`quickchat`), scheme (`quickchat`), Android package (`com.quickchat.app`), and iOS bundle id (`com.quickchat.app`).
 
 ---
