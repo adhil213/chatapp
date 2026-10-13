@@ -18,6 +18,7 @@ import { Redirect, useRouter } from 'expo-router';
 import { useIdentity } from '../hooks/useIdentity';
 import { useNotepad } from '../hooks/useNotepad';
 import { useNotes } from '../hooks/useNotes';
+import { verifySecretKey } from '../services/api';
 
 const LOGO = require('../assets/images/quickchat-icon.png');
 
@@ -29,6 +30,15 @@ function formatDate(value) {
   if (Number.isNaN(date.getTime())) return '';
 
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function looksLikeSecretKey(value) {
+  if (typeof value !== 'string') return false;
+  if (value.length < 8 || value.length > 128) return false;
+  if (/\s/.test(value)) return false;
+  if (!/[A-Za-z]/.test(value)) return false;
+  if (!/[0-9]/.test(value)) return false;
+  return true;
 }
 
 function noteTitle(note) {
@@ -44,7 +54,7 @@ function noteTitle(note) {
 export default function NotepadScreen() {
   const router = useRouter();
   const { user, loading } = useIdentity();
-  const { notepadMode } = useNotepad();
+  const { notepadMode, markUnlocked } = useNotepad();
 
   const userId = user ? user._id : 'anon';
   const remote = Boolean(user);
@@ -58,16 +68,24 @@ export default function NotepadScreen() {
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
+  const [allowSaveAsNote, setAllowSaveAsNote] = useState(false);
+
+  const canEnterKey = Boolean(user && notepadMode && user.hasSecretKey);
+  const showKeyButton = !user || !user.hasSecretKey;
+  const canTryUnlock =
+    canEnterKey && !allowSaveAsNote && looksLikeSecretKey(draft ? draft.title.trim() : '');
 
   const openNew = useCallback(() => {
     setDraft({ _id: null, title: '', content: '' });
     setSaveError(null);
+    setAllowSaveAsNote(false);
     setEditorOpen(true);
   }, []);
 
   const openNote = useCallback((note) => {
     setDraft({ _id: note._id, title: note.title || '', content: note.content || '' });
     setSaveError(null);
+    setAllowSaveAsNote(false);
     setEditorOpen(true);
   }, []);
 
@@ -75,6 +93,7 @@ export default function NotepadScreen() {
     setEditorOpen(false);
     setDraft(null);
     setSaveError(null);
+    setAllowSaveAsNote(false);
   }, []);
 
   const commit = useCallback(async () => {
@@ -83,6 +102,29 @@ export default function NotepadScreen() {
     if (!draft.title.trim() && !draft.content.trim()) {
       closeEditor();
       return;
+    }
+
+    if (canTryUnlock) {
+      setSaving(true);
+      setSaveError(null);
+
+      try {
+        await verifySecretKey({ secretKey: draft.title.trim() });
+
+        setDraft(null);
+        setEditorOpen(false);
+        setSaveError(null);
+        markUnlocked();
+        router.replace('/chats');
+        return;
+      } catch (err) {
+        setAllowSaveAsNote(true);
+        setSaving(false);
+        setSaveError(
+          'That heading was not accepted. Edit the heading, or press Save again to keep it as a note.'
+        );
+        return;
+      }
     }
 
     setSaving(true);
@@ -96,7 +138,7 @@ export default function NotepadScreen() {
     } finally {
       setSaving(false);
     }
-  }, [draft, saveNote, closeEditor]);
+  }, [draft, saveNote, closeEditor, canTryUnlock, markUnlocked, router]);
 
   const remove = useCallback(async () => {
     if (!draft || !draft._id) return;
@@ -140,13 +182,15 @@ export default function NotepadScreen() {
         </TouchableOpacity>
         <Text style={styles.brand}>NotApp</Text>
         <View style={styles.spacer} />
-        <TouchableOpacity
-          style={styles.gateBtn}
-          onPress={() => router.push('/unlock')}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-        >
-          <Text style={styles.gateIcon}>🔑</Text>
-        </TouchableOpacity>
+        {showKeyButton ? (
+          <TouchableOpacity
+            style={styles.gateBtn}
+            onPress={() => router.push('/unlock')}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <Text style={styles.gateIcon}>🔑</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
 
       {notesLoading ? (
@@ -213,10 +257,21 @@ export default function NotepadScreen() {
               placeholder="Title"
               placeholderTextColor="#9ca3af"
               value={draft ? draft.title : ''}
-              onChangeText={(value) => setDraft((prev) => ({ ...prev, title: value }))}
-              maxLength={80}
+              onChangeText={(value) => {
+                setDraft((prev) => ({ ...prev, title: value }));
+                setAllowSaveAsNote(false);
+              }}
+              maxLength={128}
+              autoCapitalize="none"
+              autoCorrect={false}
               editable={!saving}
             />
+
+            {canEnterKey ? (
+              <Text style={styles.titleHint}>
+                Enter your secret key as the title and press Save to open your chats.
+              </Text>
+            ) : null}
 
             <TextInput
               style={styles.contentInput}
@@ -396,6 +451,12 @@ const styles = StyleSheet.create({
     color: '#111827',
     paddingHorizontal: 16,
     paddingTop: 16,
+    paddingBottom: 8,
+  },
+  titleHint: {
+    fontSize: 12,
+    color: '#9ca3af',
+    paddingHorizontal: 16,
     paddingBottom: 8,
   },
   contentInput: {
