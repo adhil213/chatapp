@@ -8,7 +8,8 @@ const { signToken } = require('../utils/token');
 const { asyncHandler, HttpError } = require('../middleware/error');
 const { requireAuth } = require('../middleware/auth');
 const { createRateLimiter } = require('../middleware/rateLimit');
-const { serializePublicUser } = require('../utils/serialize');
+const { serializeSelfUser } = require('../utils/serialize');
+const { validateSecretKey } = require('../utils/secretKey');
 
 const router = express.Router();
 
@@ -21,7 +22,7 @@ const authLimiter = createRateLimiter({
 const BCRYPT_ROUNDS = 12;
 
 function publicProfile(user) {
-  return serializePublicUser(user, presence.isOnline(user._id));
+  return serializeSelfUser(user, presence.isOnline(user._id));
 }
 
 router.post(
@@ -46,6 +47,14 @@ router.post(
       throw new HttpError(400, 'password must be 8-128 characters', 'INVALID_PASSWORD');
     }
 
+    const { secretKey, error: secretKeyError } = validateSecretKey(
+      req.body && req.body.secretKey
+    );
+
+    if (secretKeyError) {
+      throw new HttpError(400, secretKeyError, 'INVALID_SECRET_KEY');
+    }
+
     const existing = await User.findOne({ username });
 
     if (existing) {
@@ -53,9 +62,17 @@ router.post(
     }
 
     const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+    const secretKeyHash = await bcrypt.hash(secretKey, BCRYPT_ROUNDS);
 
     try {
-      const user = await User.create({ username, displayName, passwordHash });
+      const user = await User.create({
+        username,
+        displayName,
+        passwordHash,
+        secretKeyHash,
+        hasSecretKey: true,
+        notepadModeEnabled: true,
+      });
 
       return res.status(201).json({ token: signToken(user._id), user: publicProfile(user) });
     } catch (err) {
