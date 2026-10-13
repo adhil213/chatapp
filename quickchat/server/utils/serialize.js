@@ -35,6 +35,28 @@ function serializePublicUser(user, online) {
   };
 }
 
+function serializeSelfUser(user, online) {
+  const base = serializePublicUser(user, online);
+
+  if (!base) return null;
+
+  return {
+    ...base,
+    notepadModeEnabled: Boolean(user.notepadModeEnabled),
+    hasSecretKey: Boolean(user.hasSecretKey),
+  };
+}
+
+function serializeNote(note) {
+  return {
+    _id: String(note._id),
+    title: note.title || '',
+    content: note.content || '',
+    createdAt: note.createdAt,
+    updatedAt: note.updatedAt,
+  };
+}
+
 function serializeRequest(request, otherUser, direction) {
   return {
     _id: String(request._id),
@@ -50,5 +72,7 @@ module.exports = {
   serializeMessage,
   serializeStatusEvent,
   serializePublicUser,
+  serializeSelfUser,
   serializeRequest,
+  serializeNote,
 };
