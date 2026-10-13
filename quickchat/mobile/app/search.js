@@ -9,10 +9,11 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 
 import OnlineDot from '../components/OnlineDot';
 import { useChatSocket } from '../hooks/useChatSocket';
+import { useNotepad } from '../hooks/useNotepad';
 import { createRequest, searchUsers } from '../services/api';
 import { presenceLabel } from '../utils/presence';
 
@@ -20,6 +21,7 @@ const DEBOUNCE_MS = 350;
 
 export default function SearchScreen() {
   const router = useRouter();
+  const { notepadMode, unlocked } = useNotepad();
   const { presence, seedPresence } = useChatSocket();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
@@ -128,6 +130,10 @@ export default function SearchScreen() {
       </TouchableOpacity>
     );
   };
+
+  if (notepadMode && !unlocked) {
+    return <Redirect href="/" />;
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>

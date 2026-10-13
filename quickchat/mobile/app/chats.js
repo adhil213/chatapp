@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  BackHandler,
   FlatList,
   RefreshControl,
   StyleSheet,
@@ -14,6 +15,7 @@ import { Redirect, useFocusEffect, useRouter } from 'expo-router';
 import OnlineDot from '../components/OnlineDot';
 import { useChatSocket } from '../hooks/useChatSocket';
 import { useIdentity } from '../hooks/useIdentity';
+import { useNotepad } from '../hooks/useNotepad';
 import { listConversations } from '../services/api';
 import { presenceLabel } from '../utils/presence';
 
@@ -28,6 +30,7 @@ function preview(conversation) {
 export default function ChatsScreen() {
   const router = useRouter();
   const { user, loading: authLoading } = useIdentity();
+  const { notepadMode, unlocked, lock } = useNotepad();
   const { presence, seedPresence, subscribe } = useChatSocket();
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -78,6 +81,20 @@ export default function ChatsScreen() {
     }, [user, load])
   );
 
+  useFocusEffect(
+    useCallback(() => {
+      if (!notepadMode) return undefined;
+
+      const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+        lock();
+        router.replace('/');
+        return true;
+      });
+
+      return () => subscription.remove();
+    }, [notepadMode, lock, router])
+  );
+
   useEffect(() => {
     return subscribe((event) => {
       if (event.type === 'message' || event.type === 'conversation:new' || event.type === 'ready') {
@@ -97,6 +114,15 @@ export default function ChatsScreen() {
   if (!user) {
     return <Redirect href="/" />;
   }
+
+  if (notepadMode && !unlocked) {
+    return <Redirect href="/" />;
+  }
+
+  const hideChat = () => {
+    lock();
+    router.replace('/');
+  };
 
   const openChat = (conversation) => {
     router.push({
@@ -122,6 +148,11 @@ export default function ChatsScreen() {
           <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/profile')}>
             <Text style={styles.actionText}>Profile</Text>
           </TouchableOpacity>
+          {notepadMode ? (
+            <TouchableOpacity style={styles.actionBtn} onPress={hideChat}>
+              <Text style={styles.actionText}>Notes</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       </View>
     </View>

@@ -9,13 +9,15 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 
 import { useChatSocket } from '../hooks/useChatSocket';
+import { useNotepad } from '../hooks/useNotepad';
 import { acceptRequest, listRequests, rejectRequest } from '../services/api';
 
 export default function RequestsScreen() {
   const router = useRouter();
+  const { notepadMode, unlocked } = useNotepad();
   const { subscribe } = useChatSocket();
   const [incoming, setIncoming] = useState([]);
   const [outgoing, setOutgoing] = useState([]);
@@ -113,6 +115,10 @@ export default function RequestsScreen() {
       <Text style={styles.sectionLabel}>Incoming</Text>
     </View>
   );
+
+  if (notepadMode && !unlocked) {
+    return <Redirect href="/" />;
+  }
 
   if (loading) {
     return (

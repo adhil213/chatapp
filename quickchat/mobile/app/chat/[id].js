@@ -10,13 +10,14 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { Redirect, Stack, useLocalSearchParams } from 'expo-router';
 
 import MessageBubble from '../../components/MessageBubble';
 import MessageComposer from '../../components/MessageComposer';
 import OnlineDot from '../../components/OnlineDot';
 import { useChat } from '../../hooks/useChat';
 import { useChatSocket } from '../../hooks/useChatSocket';
+import { useNotepad } from '../../hooks/useNotepad';
 import { useIdentity } from '../../hooks/useIdentity';
 import { getUser } from '../../services/api';
 import { presenceLabel } from '../../utils/presence';
@@ -33,6 +34,7 @@ export default function ChatScreen() {
   const friend = name || recipientId;
 
   const { user } = useIdentity();
+  const { notepadMode, unlocked } = useNotepad();
   const { status, presence, seedPresence } = useChatSocket();
   const { messages, loading, loadingMore, hasMore, error, sendText, retry, loadOlder } =
     useChat(recipientId);
@@ -72,6 +74,10 @@ export default function ChatScreen() {
 
     setRetrying(false);
   };
+
+  if (notepadMode && !unlocked) {
+    return <Redirect href="/" />;
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
