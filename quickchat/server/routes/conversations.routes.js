@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const Conversation = require('../models/Conversation');
 const Message = require('../models/Message');
 const User = require('../models/User');
+const { emitToUser } = require('../realtime');
 const presence = require('../presence');
 const { requireAuth } = require('../middleware/auth');
 const { asyncHandler, HttpError } = require('../middleware/error');
@@ -71,6 +72,71 @@ router.get(
     }
 
     return res.json({ conversations: results });
+  })
+);
+
+router.delete(
+  '/messages',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const conversations = await Conversation.find({ participants: req.userId });
+
+    for (const conversation of conversations) {
+      await Message.deleteMany({ conversationId: conversation.pairKey });
+
+      conversation.lastMessageAt = null;
+      await conversation.save();
+
+      const otherId = conversation.participants.find(
+        (id) => String(id) !== String(req.userId)
+      );
+
+      if (otherId) {
+        emitToUser(otherId, 'conversation:cleared', {
+          scope: 'conversation',
+          conversationId: conversation.pairKey,
+          userId: String(req.userId),
+        });
+      }
+    }
+
+    emitToUser(req.userId, 'conversation:cleared', { scope: 'all' });
+
+    return res.json({ ok: true, scope: 'all', cleared: conversations.length });
+  })
+);
+
+router.delete(
+  '/:otherId/messages',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { otherId } = req.params;
+
+    if (!mongoose.isValidObjectId(otherId)) {
+      throw new HttpError(400, 'Invalid user id', 'INVALID_USER');
+    }
+
+    const conversation = await getAcceptedConversation(req.userId, otherId);
+
+    if (!conversation) {
+      throw new HttpError(403, 'You are not connected with this user', 'NOT_CONNECTED');
+    }
+
+    await Message.deleteMany({ conversationId: conversation.pairKey });
+
+    conversation.lastMessageAt = null;
+    await conversation.save();
+
+    const payload = {
+      scope: 'conversation',
+      conversationId: conversation.pairKey,
+      userId: String(req.userId),
+    };
+
+    emitToUser(req.userId, 'conversation:cleared', payload);
+    emitToUser(otherId, 'conversation:cleared', payload);
+
+    return res.json({ ok: true, scope: 'conversation', conversationId: conversation.pairKey });
   })
 );
 
