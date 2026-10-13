@@ -10,38 +10,11 @@ const router = express.Router();
 
 const MAX_TITLE = 128;
 const MAX_CONTENT = 10000;
-const MAX_CIPHER = 60000;
-const MAX_NONCE = 128;
-const MAX_ALG = 32;
 const MAX_NOTES = 500;
 
 function sanitize(body) {
   const rawTitle = body && body.title;
   const rawContent = body && body.content;
-  const rawCipher = body && body.cipher;
-  const rawNonce = body && body.nonce;
-  const rawAlg = body && body.alg;
-
-  const hasCipher =
-    typeof rawCipher === 'string' && rawCipher.length > 0 && typeof rawNonce === 'string' && rawNonce.length > 0;
-
-  if (hasCipher) {
-    if (rawCipher.length > MAX_CIPHER) {
-      throw new HttpError(400, 'Encrypted note is too long', 'INVALID_NOTE');
-    }
-
-    if (typeof rawNonce !== 'string' || rawNonce.length > MAX_NONCE) {
-      throw new HttpError(400, 'Invalid note nonce', 'INVALID_NOTE');
-    }
-
-    const alg = typeof rawAlg === 'string' && rawAlg.length > 0 ? rawAlg : 'xc20p-v1';
-
-    if (alg.length > MAX_ALG) {
-      throw new HttpError(400, 'Invalid note algorithm', 'INVALID_NOTE');
-    }
-
-    return { title: '', content: '', cipher: rawCipher, nonce: rawNonce, alg };
-  }
 
   const title = typeof rawTitle === 'string' ? rawTitle.trim() : '';
   const content = typeof rawContent === 'string' ? rawContent : '';
@@ -54,7 +27,7 @@ function sanitize(body) {
     throw new HttpError(400, `Note is too long (max ${MAX_CONTENT} characters)`, 'INVALID_NOTE');
   }
 
-  return { title, content, cipher: null, nonce: null, alg: null };
+  return { title, content };
 }
 
 async function loadOwnedNote(req) {
@@ -87,7 +60,7 @@ router.post(
   '/',
   requireAuth,
   asyncHandler(async (req, res) => {
-    const { title, content, cipher, nonce, alg } = sanitize(req.body);
+    const { title, content } = sanitize(req.body);
 
     const count = await Note.countDocuments({ userId: req.userId });
 
@@ -95,7 +68,7 @@ router.post(
       throw new HttpError(400, 'Note limit reached', 'NOTE_LIMIT');
     }
 
-    const note = await Note.create({ userId: req.userId, title, content, cipher, nonce, alg });
+    const note = await Note.create({ userId: req.userId, title, content });
 
     return res.status(201).json({ note: serializeNote(note) });
   })
@@ -106,13 +79,10 @@ router.patch(
   requireAuth,
   asyncHandler(async (req, res) => {
     const note = await loadOwnedNote(req);
-    const { title, content, cipher, nonce, alg } = sanitize(req.body);
+    const { title, content } = sanitize(req.body);
 
     note.title = title;
     note.content = content;
-    note.cipher = cipher;
-    note.nonce = nonce;
-    note.alg = alg;
 
     await note.save();
 

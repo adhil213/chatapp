@@ -19,11 +19,9 @@ function Ticks({ status }) {
   return null;
 }
 
-function MessageBubble({ message, text, isMine, onRetry }) {
+function MessageBubble({ message, isMine, onRetry }) {
   const failed = message.status === 'failed';
   const sending = !failed && (message.pending || message.status === 'sending');
-  const locked = Boolean(message.encrypted) && (text === null || text === undefined);
-  const display = text === undefined ? message.text : text;
 
   const metaLabel = failed
     ? 'Not sent — tap to retry'
@@ -33,11 +31,7 @@ function MessageBubble({ message, text, isMine, onRetry }) {
 
   const content = (
     <View style={[styles.bubble, isMine ? styles.mine : styles.theirs, failed && styles.failed]}>
-      {locked ? (
-        <Text style={styles.lockedText}>🔒 Encrypted — unlock to read</Text>
-      ) : (
-        <Text style={[styles.text, failed && styles.failedText]}>{display}</Text>
-      )}
+      <Text style={[styles.text, failed && styles.failedText]}>{message.text}</Text>
       <View style={styles.metaRow}>
         <Text style={[styles.meta, failed && styles.failedMeta]}>{metaLabel}</Text>
         {isMine && !failed ? <Ticks status={message.status} /> : null}
@@ -92,11 +86,6 @@ const styles = StyleSheet.create({
   text: {
     fontSize: 16,
     color: '#111827',
-  },
-  lockedText: {
-    fontSize: 15,
-    color: '#6b7280',
-    fontStyle: 'italic',
   },
   failedText: {
     color: '#7f1d1d',

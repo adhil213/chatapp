@@ -14,7 +14,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
 import AuthForm from '../components/AuthForm';
-import { useCrypto } from '../hooks/useCrypto';
 import { useIdentity } from '../hooks/useIdentity';
 import * as api from '../services/api';
 
@@ -30,7 +29,6 @@ function validateSecretKey(value) {
 export default function RecoveryScreen() {
   const router = useRouter();
   const { user, loading, applyUser } = useIdentity();
-  const { provision } = useCrypto();
 
   const [secretKey, setSecretKey] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -88,8 +86,7 @@ export default function RecoveryScreen() {
     setError(null);
 
     try {
-      const identity = provision(secretKey);
-      const updated = await api.resetSecretKey({ secretKey, ...identity });
+      const updated = await api.resetSecretKey({ secretKey });
 
       await applyUser(updated);
 

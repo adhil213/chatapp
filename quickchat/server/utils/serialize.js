@@ -5,11 +5,7 @@ function serializeMessage(message) {
     conversationId: message.conversationId,
     senderId: String(message.senderId),
     recipientId: String(message.recipientId),
-    text: message.text || null,
-    cipher: message.cipher || null,
-    nonce: message.nonce || null,
-    alg: message.alg || null,
-    encrypted: Boolean(message.alg && message.cipher && message.nonce),
+    text: message.text,
     status: message.status,
     deliveredAt: message.deliveredAt || null,
     readAt: message.readAt || null,
@@ -34,7 +30,6 @@ function serializePublicUser(user, online) {
     _id: String(user._id),
     username: user.username,
     displayName: user.displayName,
-    publicKey: user.publicKey || null,
     online: Boolean(online),
     lastSeen: user.lastSeen || null,
   };
@@ -49,9 +44,6 @@ function serializeSelfUser(user, online) {
     ...base,
     notepadModeEnabled: Boolean(user.notepadModeEnabled),
     hasSecretKey: Boolean(user.hasSecretKey),
-    kdfSalt: user.kdfSalt || null,
-    keyBackup: user.keyBackup || null,
-    keyVersion: user.keyVersion || 1,
   };
 }
 
@@ -60,10 +52,6 @@ function serializeNote(note) {
     _id: String(note._id),
     title: note.title || '',
     content: note.content || '',
-    cipher: note.cipher || null,
-    nonce: note.nonce || null,
-    alg: note.alg || null,
-    encrypted: Boolean(note.alg && note.cipher && note.nonce),
     createdAt: note.createdAt,
     updatedAt: note.updatedAt,
   };

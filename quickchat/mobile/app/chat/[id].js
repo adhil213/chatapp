@@ -18,7 +18,6 @@ import MessageComposer from '../../components/MessageComposer';
 import OnlineDot from '../../components/OnlineDot';
 import { useChat } from '../../hooks/useChat';
 import { useChatSocket } from '../../hooks/useChatSocket';
-import { useCrypto } from '../../hooks/useCrypto';
 import { useNotepad } from '../../hooks/useNotepad';
 import { useIdentity } from '../../hooks/useIdentity';
 import { clearConversation, getUser } from '../../services/api';
@@ -39,11 +38,8 @@ export default function ChatScreen() {
   const { user } = useIdentity();
   const { notepadMode, unlocked } = useNotepad();
   const { status, presence, seedPresence } = useChatSocket();
-  const { decryptMessage, unlocked: cryptoUnlocked } = useCrypto();
-  const [peer, setPeer] = useState(null);
-  const peerPublicKey = peer ? peer.publicKey : null;
   const { messages, loading, loadingMore, hasMore, error, sendText, retry, loadOlder, clearChat } =
-    useChat(recipientId, peerPublicKey);
+    useChat(recipientId);
   const [retrying, setRetrying] = useState(false);
 
   useEffect(() => {
@@ -51,10 +47,7 @@ export default function ChatScreen() {
 
     getUser(recipientId)
       .then((user) => {
-        if (active) {
-          seedPresence([user]);
-          setPeer(user);
-        }
+        if (active) seedPresence([user]);
       })
       .catch(() => {});
 
@@ -62,12 +55,6 @@ export default function ChatScreen() {
       active = false;
     };
   }, [recipientId, seedPresence]);
-
-  const resolveText = (message) => {
-    if (!message.encrypted) return message.text;
-
-    return decryptMessage(recipientId, peerPublicKey, message);
-  };
 
   const data = useMemo(() => {
     const items = [];
@@ -81,16 +68,11 @@ export default function ChatScreen() {
         lastDay = day;
       }
 
-      items.push({
-        type: 'message',
-        id: message._id || message.clientMessageId,
-        message,
-        text: resolveText(message),
-      });
+      items.push({ type: 'message', id: message._id || message.clientMessageId, message });
     }
 
     return items.reverse();
-  }, [messages, decryptMessage, recipientId, peerPublicKey, unlocked, cryptoUnlocked]);
+  }, [messages]);
 
   const selfId = user ? user._id : null;
   const banner = CONNECTION_LABEL[status];
@@ -174,14 +156,6 @@ export default function ChatScreen() {
           <View style={styles.center}>
             <ActivityIndicator />
           </View>
-        ) : data.length === 0 ? (
-          <View style={styles.emptyState}>
-            {error ? (
-              <Text style={styles.error}>{String(error.message || error)}</Text>
-            ) : (
-              <Text style={styles.muted}>No messages yet. Say hello.</Text>
-            )}
-          </View>
         ) : (
           <FlatList
             data={data}
@@ -209,10 +183,20 @@ export default function ChatScreen() {
               ) : (
                 <MessageBubble
                   message={item.message}
-                  text={item.text}
                   isMine={item.message.senderId === selfId}
                   onRetry={retry}
                 />
+              )
+            }
+            ListEmptyComponent={
+              error ? (
+                <View style={styles.empty}>
+                  <Text style={styles.error}>{String(error.message || error)}</Text>
+                </View>
+              ) : (
+                <View style={styles.empty}>
+                  <Text style={styles.muted}>No messages yet. Say hello.</Text>
+                </View>
               )
             }
           />
@@ -282,11 +266,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
   },
-  emptyState: {
-    flex: 1,
+  empty: {
+    paddingVertical: 40,
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
+    transform: [{ scaleY: -1 }],
   },
   muted: {
     color: '#6b7280',

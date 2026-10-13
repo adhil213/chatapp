@@ -41,10 +41,10 @@ export async function getHealth() {
   return request('/api/health');
 }
 
-export async function register({ username, displayName, password, secretKey, publicKey, kdfSalt, keyBackup }) {
+export async function register({ username, displayName, password, secretKey }) {
   return request('/api/auth/register', {
     method: 'POST',
-    body: { username, displayName, password, secretKey, publicKey, kdfSalt, keyBackup },
+    body: { username, displayName, password, secretKey },
   });
 }
 
@@ -122,43 +122,28 @@ export async function verifySecretKey({ secretKey }) {
   });
 }
 
-export async function getIdentity() {
-  const body = await request('/api/vault/identity');
-
-  return body.identity;
-}
-
-export async function saveIdentity({ publicKey, kdfSalt, keyBackup }) {
-  const body = await request('/api/vault/identity', {
-    method: 'PUT',
-    body: { publicKey, kdfSalt, keyBackup },
-  });
-
-  return body.user;
-}
-
-export async function createSecretKey({ secretKey, publicKey, kdfSalt, keyBackup }) {
+export async function createSecretKey({ secretKey }) {
   const body = await request('/api/vault/secret-key', {
     method: 'POST',
-    body: { secretKey, publicKey, kdfSalt, keyBackup },
+    body: { secretKey },
   });
 
   return body.user;
 }
 
-export async function changeSecretKey({ currentSecretKey, newSecretKey, publicKey, kdfSalt, keyBackup }) {
+export async function changeSecretKey({ currentSecretKey, newSecretKey }) {
   const body = await request('/api/vault/secret-key', {
     method: 'PATCH',
-    body: { currentSecretKey, newSecretKey, publicKey, kdfSalt, keyBackup },
+    body: { currentSecretKey, newSecretKey },
   });
 
   return body.user;
 }
 
-export async function resetSecretKey({ secretKey, publicKey, kdfSalt, keyBackup }) {
+export async function resetSecretKey({ secretKey }) {
   const body = await request('/api/vault/reset', {
     method: 'POST',
-    body: { secretKey, publicKey, kdfSalt, keyBackup },
+    body: { secretKey },
   });
 
   return body.user;
@@ -179,19 +164,19 @@ export async function listNotes() {
   return body.notes;
 }
 
-export async function createNote({ title, content, cipher, nonce, alg }) {
+export async function createNote({ title, content }) {
   const body = await request('/api/notes', {
     method: 'POST',
-    body: { title, content, cipher, nonce, alg },
+    body: { title, content },
   });
 
   return body.note;
 }
 
-export async function updateNote(id, { title, content, cipher, nonce, alg }) {
+export async function updateNote(id, { title, content }) {
   const body = await request(`/api/notes/${id}`, {
     method: 'PATCH',
-    body: { title, content, cipher, nonce, alg },
+    body: { title, content },
   });
 
   return body.note;

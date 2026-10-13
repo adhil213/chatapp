@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Image,
   KeyboardAvoidingView,
@@ -16,11 +15,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Redirect, useRouter } from 'expo-router';
 
-import { useCrypto } from '../hooks/useCrypto';
 import { useIdentity } from '../hooks/useIdentity';
 import { useNotepad } from '../hooks/useNotepad';
 import { useNotes } from '../hooks/useNotes';
-import { saveIdentity, verifySecretKey } from '../services/api';
+import { verifySecretKey } from '../services/api';
 
 const LOGO = require('../assets/images/quickchat-icon.png');
 
@@ -44,8 +42,6 @@ function looksLikeSecretKey(value) {
 }
 
 function noteTitle(note) {
-  if (note.locked) return 'Locked note';
-
   const title = (note.title || '').trim();
 
   if (title) return title;
@@ -57,9 +53,8 @@ function noteTitle(note) {
 
 export default function NotepadScreen() {
   const router = useRouter();
-  const { user, loading, applyUser } = useIdentity();
+  const { user, loading } = useIdentity();
   const { notepadMode, markUnlocked } = useNotepad();
-  const { unlock, provision, decryptNote, unlocked } = useCrypto();
 
   const userId = user ? user._id : 'anon';
   const remote = Boolean(user);
@@ -88,15 +83,7 @@ export default function NotepadScreen() {
   }, []);
 
   const openNote = useCallback((note) => {
-    if (note.locked) {
-      Alert.alert(
-        'Locked note',
-        'Enter your secret key first. Tap the new note button and use your secret key as the heading to unlock.'
-      );
-      return;
-    }
-
-    setDraft({ _id: note._id, title: note.title, content: note.content });
+    setDraft({ _id: note._id, title: note.title || '', content: note.content || '' });
     setSaveError(null);
     setAllowSaveAsNote(false);
     setEditorOpen(true);
@@ -122,18 +109,7 @@ export default function NotepadScreen() {
       setSaveError(null);
 
       try {
-        const secretKey = draft.title.trim();
-        const body = await verifySecretKey({ secretKey });
-        const identity = body && body.identity;
-
-        if (identity && identity.kdfSalt && identity.keyBackup) {
-          unlock({ secretKey, kdfSalt: identity.kdfSalt, keyBackup: identity.keyBackup });
-        } else {
-          const bundle = provision(secretKey);
-          const updated = await saveIdentity(bundle);
-
-          await applyUser(updated);
-        }
+        await verifySecretKey({ secretKey: draft.title.trim() });
 
         setDraft(null);
         setEditorOpen(false);
@@ -162,7 +138,7 @@ export default function NotepadScreen() {
     } finally {
       setSaving(false);
     }
-  }, [draft, saveNote, closeEditor, canTryUnlock, markUnlocked, router, unlock, provision, applyUser]);
+  }, [draft, saveNote, closeEditor, canTryUnlock, markUnlocked, router]);
 
   const remove = useCallback(async () => {
     if (!draft || !draft._id) return;
@@ -180,19 +156,7 @@ export default function NotepadScreen() {
     }
   }, [draft, removeNote, closeEditor]);
 
-  const data = useMemo(
-    () =>
-      notes.map((note) => {
-        if (!note.encrypted) return note;
-
-        const decrypted = decryptNote(note);
-
-        if (!decrypted) return { ...note, locked: true, title: '', content: '' };
-
-        return { ...note, title: decrypted.title, content: decrypted.content };
-      }),
-    [notes, decryptNote, unlocked]
-  );
+  const data = useMemo(() => notes, [notes]);
 
   if (loading) {
     return (
@@ -252,11 +216,7 @@ export default function NotepadScreen() {
                 {noteTitle(item)}
               </Text>
               <Text style={styles.rowPreview} numberOfLines={2}>
-                {item.locked
-                  ? '🔒 Enter your secret key to read this note'
-                  : item.content
-                    ? item.content.trim()
-                    : 'No additional text'}
+                {item.content ? item.content.trim() : 'No additional text'}
               </Text>
               <Text style={styles.rowDate}>{formatDate(item.updatedAt || item.createdAt)}</Text>
             </TouchableOpacity>

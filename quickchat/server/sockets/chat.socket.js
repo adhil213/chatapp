@@ -11,9 +11,6 @@ const { verifyToken } = require('../utils/token');
 const { userRoom } = require('../realtime');
 
 const MAX_TEXT_LENGTH = 2000;
-const MAX_CIPHER_LENGTH = 8000;
-const MAX_NONCE_LENGTH = 128;
-const MAX_ALG_LENGTH = 32;
 const OFFLINE_GRACE_MS = Number(process.env.PRESENCE_GRACE_MS) || 5000;
 
 const offlineTimers = new Map();
@@ -77,15 +74,7 @@ function broadcastStatus(io, message) {
     .emit('message:status', event);
 }
 
-async function persistMessage({
-  senderId,
-  recipientId,
-  text,
-  cipher,
-  nonce,
-  alg,
-  clientMessageId,
-}) {
+async function persistMessage({ senderId, recipientId, text, clientMessageId }) {
   const conversationId = getPairKey(senderId, recipientId);
 
   try {
@@ -93,10 +82,7 @@ async function persistMessage({
       conversationId,
       senderId,
       recipientId,
-      text: text || null,
-      cipher: cipher || null,
-      nonce: nonce || null,
-      alg: alg || null,
+      text,
       clientMessageId,
       status: 'sent',
     });
@@ -237,9 +223,6 @@ module.exports = function registerChatHandlers(io) {
         const recipientId = payload && payload.recipientId;
         const clientMessageId = payload && payload.clientMessageId;
         const rawText = payload && payload.text;
-        const rawCipher = payload && payload.cipher;
-        const rawNonce = payload && payload.nonce;
-        const rawAlg = payload && payload.alg;
 
         if (!mongoose.isValidObjectId(recipientId)) {
           return reply(ack, { ok: false, error: 'INVALID_PARTICIPANTS' });
@@ -253,26 +236,8 @@ module.exports = function registerChatHandlers(io) {
           return reply(ack, { ok: false, error: 'MISSING_CLIENT_MESSAGE_ID' });
         }
 
-        const hasCipher =
-          typeof rawCipher === 'string' &&
-          rawCipher.trim().length > 0 &&
-          typeof rawNonce === 'string' &&
-          rawNonce.trim().length > 0 &&
-          typeof rawAlg === 'string' &&
-          rawAlg.trim().length > 0;
-
-        const hasText = typeof rawText === 'string' && rawText.trim().length > 0;
-
-        if (!hasCipher && !hasText) {
+        if (typeof rawText !== 'string' || !rawText.trim()) {
           return reply(ack, { ok: false, error: 'EMPTY_MESSAGE' });
-        }
-
-        if (hasCipher && (rawCipher.length > MAX_CIPHER_LENGTH || rawNonce.length > MAX_NONCE_LENGTH)) {
-          return reply(ack, { ok: false, error: 'MESSAGE_TOO_LONG' });
-        }
-
-        if (hasText && rawText.length > MAX_TEXT_LENGTH) {
-          return reply(ack, { ok: false, error: 'MESSAGE_TOO_LONG' });
         }
 
         const conversation = await getAcceptedConversation(userId, recipientId);
@@ -287,18 +252,12 @@ module.exports = function registerChatHandlers(io) {
           return reply(ack, { ok: false, error: 'RECIPIENT_NOT_FOUND' });
         }
 
-        const text = hasText ? rawText.trim().slice(0, MAX_TEXT_LENGTH) : null;
-        const cipher = hasCipher ? rawCipher.trim().slice(0, MAX_CIPHER_LENGTH) : null;
-        const nonce = hasCipher ? rawNonce.trim().slice(0, MAX_NONCE_LENGTH) : null;
-        const alg = hasCipher ? rawAlg.trim().slice(0, MAX_ALG_LENGTH) : null;
+        const text = rawText.trim().slice(0, MAX_TEXT_LENGTH);
 
         const { message, created } = await persistMessage({
           senderId: userId,
           recipientId,
           text,
-          cipher,
-          nonce,
-          alg,
           clientMessageId: clientMessageId.trim(),
         });
 
