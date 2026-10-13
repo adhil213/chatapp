@@ -182,6 +182,14 @@ export async function deleteNote(id) {
   return request(`/api/notes/${id}`, { method: 'DELETE' });
 }
 
+export async function clearConversation(otherId) {
+  return request(`/api/conversations/${otherId}/messages`, { method: 'DELETE' });
+}
+
+export async function clearAllConversations() {
+  return request('/api/conversations/messages', { method: 'DELETE' });
+}
+
 export async function getConversationMessages({ otherId, limit, before, after } = {}) {
   const params = new URLSearchParams();
 

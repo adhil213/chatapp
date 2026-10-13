@@ -176,6 +176,11 @@ export function ChatSocketProvider({ children }) {
       emitToListeners({ type: 'conversation:new', ...payload });
     };
 
+    const onConversationCleared = (payload) => {
+      if (!active) return;
+      emitToListeners({ type: 'conversation:cleared', ...payload });
+    };
+
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
     socket.on('connect_error', onConnectError);
@@ -186,6 +191,7 @@ export function ChatSocketProvider({ children }) {
     socket.on('request:new', onRequestNew);
     socket.on('request:updated', onRequestUpdated);
     socket.on('conversation:new', onConversationNew);
+    socket.on('conversation:cleared', onConversationCleared);
     socket.io.on('reconnect_attempt', onReconnectAttempt);
 
     if (socket.connected) {
@@ -206,6 +212,7 @@ export function ChatSocketProvider({ children }) {
       socket.off('request:new', onRequestNew);
       socket.off('request:updated', onRequestUpdated);
       socket.off('conversation:new', onConversationNew);
+      socket.off('conversation:cleared', onConversationCleared);
       socket.io.off('reconnect_attempt', onReconnectAttempt);
     };
   }, [token, emitToListeners, applyPresenceUpdate, applyPresenceSnapshot]);
