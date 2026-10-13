@@ -22,6 +22,19 @@ const userSchema = new mongoose.Schema(
       required: true,
       select: false,
     },
+    secretKeyHash: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    hasSecretKey: {
+      type: Boolean,
+      default: false,
+    },
+    notepadModeEnabled: {
+      type: Boolean,
+      default: false,
+    },
     lastSeen: {
       type: Date,
       default: null,
