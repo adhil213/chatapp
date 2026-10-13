@@ -11,7 +11,7 @@ const noteSchema = new mongoose.Schema(
     title: {
       type: String,
       trim: true,
-      maxlength: 80,
+      maxlength: 128,
       default: '',
     },
     content: {

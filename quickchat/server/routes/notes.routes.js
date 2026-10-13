@@ -8,7 +8,7 @@ const { serializeNote } = require('../utils/serialize');
 
 const router = express.Router();
 
-const MAX_TITLE = 80;
+const MAX_TITLE = 128;
 const MAX_CONTENT = 10000;
 const MAX_NOTES = 500;
 
