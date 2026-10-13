@@ -136,10 +136,10 @@ export async function changeSecretKey({ currentSecretKey, newSecretKey }) {
   return body.user;
 }
 
-export async function resetSecretKey({ password, secretKey }) {
+export async function resetSecretKey({ secretKey }) {
   const body = await request('/api/vault/reset', {
     method: 'POST',
-    body: { password, secretKey },
+    body: { secretKey },
   });
 
   return body.user;

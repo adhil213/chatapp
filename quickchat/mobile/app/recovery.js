@@ -30,7 +30,6 @@ export default function RecoveryScreen() {
   const router = useRouter();
   const { user, loading, applyUser } = useIdentity();
 
-  const [password, setPassword] = useState('');
   const [secretKey, setSecretKey] = useState('');
   const [confirm, setConfirm] = useState('');
   const [show, setShow] = useState(false);
@@ -71,11 +70,6 @@ export default function RecoveryScreen() {
   }
 
   const submit = async () => {
-    if (password.length === 0) {
-      setError('Enter your account password.');
-      return;
-    }
-
     const keyError = validateSecretKey(secretKey);
 
     if (keyError) {
@@ -92,11 +86,10 @@ export default function RecoveryScreen() {
     setError(null);
 
     try {
-      const updated = await api.resetSecretKey({ password, secretKey });
+      const updated = await api.resetSecretKey({ secretKey });
 
       await applyUser(updated);
 
-      setPassword('');
       setSecretKey('');
       setConfirm('');
       setMessage('Your secret key was reset.');
@@ -114,22 +107,9 @@ export default function RecoveryScreen() {
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <Text style={styles.heading}>Reset secret key</Text>
         <Text style={styles.sub}>
-          To protect your account, resetting the secret key requires confirming your account
-          password. Long-pressing the logo only opens this screen — it never resets your key by
-          itself.
+          You are signed in, so you can set a new secret key below. Long-pressing the logo only
+          opens this screen — it never resets your key by itself.
         </Text>
-
-        <TextInput
-          style={styles.input}
-          placeholder="Account password"
-          placeholderTextColor="#9ca3af"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry={!show}
-          autoCapitalize="none"
-          autoCorrect={false}
-          editable={!submitting}
-        />
 
         <View style={styles.keyRow}>
           <TextInput

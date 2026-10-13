@@ -141,27 +141,16 @@ router.post(
   requireAuth,
   resetLimiter,
   asyncHandler(async (req, res) => {
-    const password = req.body && req.body.password;
     const { secretKey, error } = validateSecretKey(req.body && req.body.secretKey);
 
     if (error) {
       throw new HttpError(400, error, 'INVALID_SECRET_KEY');
     }
 
-    if (typeof password !== 'string' || password.length === 0) {
-      throw new HttpError(400, 'Account password is required', 'INVALID_PASSWORD');
-    }
+    const user = await User.findById(req.userId).select('+secretKeyHash');
 
-    const user = await User.findById(req.userId).select('+passwordHash +secretKeyHash');
-
-    if (!user || !user.passwordHash) {
+    if (!user) {
       throw new HttpError(401, 'Authentication required', 'UNAUTHORIZED');
-    }
-
-    const ok = await bcrypt.compare(password, user.passwordHash);
-
-    if (!ok) {
-      throw new HttpError(401, 'Account password is incorrect', 'INVALID_PASSWORD');
     }
 
     user.secretKeyHash = await bcrypt.hash(secretKey, BCRYPT_ROUNDS);
