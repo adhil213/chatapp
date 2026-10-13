@@ -174,6 +174,14 @@ export default function ChatScreen() {
           <View style={styles.center}>
             <ActivityIndicator />
           </View>
+        ) : data.length === 0 ? (
+          <View style={styles.emptyState}>
+            {error ? (
+              <Text style={styles.error}>{String(error.message || error)}</Text>
+            ) : (
+              <Text style={styles.muted}>No messages yet. Say hello.</Text>
+            )}
+          </View>
         ) : (
           <FlatList
             data={data}
@@ -205,17 +213,6 @@ export default function ChatScreen() {
                   isMine={item.message.senderId === selfId}
                   onRetry={retry}
                 />
-              )
-            }
-            ListEmptyComponent={
-              error ? (
-                <View style={styles.empty}>
-                  <Text style={styles.error}>{String(error.message || error)}</Text>
-                </View>
-              ) : (
-                <View style={styles.empty}>
-                  <Text style={styles.muted}>No messages yet. Say hello.</Text>
-                </View>
               )
             }
           />
@@ -285,10 +282,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
   },
-  empty: {
-    paddingVertical: 40,
+  emptyState: {
+    flex: 1,
     alignItems: 'center',
-    transform: [{ scaleY: -1 }],
+    justifyContent: 'center',
+    paddingHorizontal: 24,
   },
   muted: {
     color: '#6b7280',
