@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Redirect, useRouter } from 'expo-router';
 
 import AuthForm from '../components/AuthForm';
+import { useCrypto } from '../hooks/useCrypto';
 import { useIdentity } from '../hooks/useIdentity';
 import { useNotepad } from '../hooks/useNotepad';
 import { migrateAnonymousNotes } from '../hooks/useNotes';
@@ -31,6 +32,7 @@ export default function UnlockScreen() {
   const router = useRouter();
   const { user, loading, applyUser } = useIdentity();
   const { notepadMode, markUnlocked } = useNotepad();
+  const { unlock, provision } = useCrypto();
 
   const [key, setKey] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -102,11 +104,22 @@ export default function UnlockScreen() {
 
     try {
       if (needsSetup) {
-        const updated = await api.createSecretKey({ secretKey: key });
+        const identity = provision(key);
+        const updated = await api.createSecretKey({ secretKey: key, ...identity });
 
         await applyUser(updated);
       } else {
-        await api.verifySecretKey({ secretKey: key });
+        const body = await api.verifySecretKey({ secretKey: key });
+        const identity = body && body.identity;
+
+        if (identity && identity.kdfSalt && identity.keyBackup) {
+          unlock({ secretKey: key, kdfSalt: identity.kdfSalt, keyBackup: identity.keyBackup });
+        } else {
+          const bundle = provision(key);
+          const updated = await api.saveIdentity(bundle);
+
+          await applyUser(updated);
+        }
       }
 
       setKey('');

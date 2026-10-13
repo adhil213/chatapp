@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import * as api from '../services/api';
+import * as keys from '../services/keys';
 
 const STORAGE_KEY = 'quickchat.session';
 
@@ -66,7 +67,25 @@ export function IdentityProvider({ children }) {
 
   const signUp = useCallback(
     async ({ username, displayName, password, secretKey }) => {
-      const result = await api.register({ username, displayName, password, secretKey });
+      const identity = keys.provisionKeys(secretKey);
+      let result;
+
+      try {
+        result = await api.register({
+          username,
+          displayName,
+          password,
+          secretKey,
+          publicKey: identity.publicKey,
+          kdfSalt: identity.kdfSalt,
+          keyBackup: identity.keyBackup,
+        });
+      } catch (err) {
+        keys.lockKeys();
+        throw err;
+      }
+
+      keys.adoptUserId(result.user._id);
 
       await persist(result.token, result.user);
 
@@ -76,6 +95,7 @@ export function IdentityProvider({ children }) {
   );
 
   const signOut = useCallback(async () => {
+    keys.lockKeys();
     api.setAuthToken(null);
     await AsyncStorage.removeItem(STORAGE_KEY);
     setToken(null);

@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Redirect, useRouter } from 'expo-router';
 
+import { useCrypto } from '../hooks/useCrypto';
 import { useIdentity } from '../hooks/useIdentity';
 import { useNotepad } from '../hooks/useNotepad';
 import { clearNotesCache } from '../hooks/useNotes';
@@ -32,6 +33,7 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { user, updateProfile, signOut, deleteAccount, applyUser } = useIdentity();
   const { notepadMode, unlocked, markUnlocked } = useNotepad();
+  const { provision, rewrap } = useCrypto();
 
   const [displayName, setDisplayName] = useState(user ? user.displayName : '');
   const [saving, setSaving] = useState(false);
@@ -140,7 +142,8 @@ export default function ProfileScreen() {
     setModeError(null);
 
     try {
-      let updated = await api.createSecretKey({ secretKey: setupKey });
+      const identity = provision(setupKey);
+      let updated = await api.createSecretKey({ secretKey: setupKey, ...identity });
 
       updated = await api.setNotepadMode(true);
 
@@ -181,9 +184,28 @@ export default function ProfileScreen() {
     setKeyMessage(null);
 
     try {
+      let bundle;
+
+      if (user.kdfSalt && user.keyBackup) {
+        try {
+          bundle = rewrap({
+            currentSecretKey: currentKey,
+            newSecretKey: newKey,
+            kdfSalt: user.kdfSalt,
+            keyBackup: user.keyBackup,
+          });
+        } catch (err) {
+          setKeyError('Your current secret key is incorrect.');
+          return;
+        }
+      } else {
+        bundle = provision(newKey);
+      }
+
       const updated = await api.changeSecretKey({
         currentSecretKey: currentKey,
         newSecretKey: newKey,
+        ...bundle,
       });
 
       await applyUser(updated);
