@@ -19,9 +19,21 @@ const messageSchema = new mongoose.Schema(
     },
     text: {
       type: String,
-      required: true,
+      default: null,
       trim: true,
       maxlength: 2000,
+    },
+    cipher: {
+      type: String,
+      default: null,
+    },
+    nonce: {
+      type: String,
+      default: null,
+    },
+    alg: {
+      type: String,
+      default: null,
     },
     clientMessageId: {
       type: String,

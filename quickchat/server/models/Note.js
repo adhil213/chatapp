@@ -19,6 +19,21 @@ const noteSchema = new mongoose.Schema(
       maxlength: 10000,
       default: '',
     },
+    cipher: {
+      type: String,
+      maxlength: 60000,
+      default: null,
+    },
+    nonce: {
+      type: String,
+      maxlength: 128,
+      default: null,
+    },
+    alg: {
+      type: String,
+      maxlength: 32,
+      default: null,
+    },
   },
   { timestamps: true }
 );

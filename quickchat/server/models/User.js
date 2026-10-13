@@ -35,6 +35,22 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    publicKey: {
+      type: String,
+      default: null,
+    },
+    kdfSalt: {
+      type: String,
+      default: null,
+    },
+    keyBackup: {
+      type: String,
+      default: null,
+    },
+    keyVersion: {
+      type: Number,
+      default: 1,
+    },
     lastSeen: {
       type: Date,
       default: null,
