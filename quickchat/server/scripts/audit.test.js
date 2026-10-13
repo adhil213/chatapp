@@ -33,8 +33,11 @@ async function api(path, { method = 'GET', body, token } = {}) {
   return { status: res.status, body: json };
 }
 
-const register = (username, displayName, password = 'password123') =>
-  api('/api/auth/register', { method: 'POST', body: { username, displayName, password } });
+const register = (username, displayName, password = 'password123', secretKey = 'vaultkey123') =>
+  api('/api/auth/register', {
+    method: 'POST',
+    body: { username, displayName, password, secretKey },
+  });
 
 const login = (username, password = 'password123') =>
   api('/api/auth/login', { method: 'POST', body: { username, password } });
@@ -257,6 +260,53 @@ async function main() {
 
   const bobProfile = await api(`/api/users/${bob._id}`, { token: aliceToken });
   check('offline user exposes lastSeen', Boolean(bobProfile.body.user.lastSeen));
+
+  console.log('\nD2. Notepad vault and notes');
+
+  const badUnlock = await api('/api/vault/unlock', {
+    method: 'POST',
+    token: aliceToken,
+    body: { secretKey: 'wrongkey999' },
+  });
+  check('unlock with wrong key is rejected', badUnlock.status === 401);
+
+  const goodUnlock = await api('/api/vault/unlock', {
+    method: 'POST',
+    token: aliceToken,
+    body: { secretKey: 'vaultkey123' },
+  });
+  check('unlock with correct key succeeds', goodUnlock.status === 200 && goodUnlock.body.ok === true);
+
+  const noteCreate = await api('/api/notes', {
+    method: 'POST',
+    token: aliceToken,
+    body: { title: 'Groceries', content: 'milk, eggs' },
+  });
+  check('user can create a note', noteCreate.status === 201 && noteCreate.body.note.title === 'Groceries');
+  const noteId = noteCreate.body.note._id;
+
+  const noteList = await api('/api/notes', { token: aliceToken });
+  check('user sees their own note', noteList.body.notes.some((n) => n._id === noteId));
+
+  const bobNotes = await api('/api/notes', { token: bobToken });
+  check('notes are isolated per user', !bobNotes.body.notes.some((n) => n._id === noteId));
+
+  const otherUpdate = await api(`/api/notes/${noteId}`, {
+    method: 'PATCH',
+    token: bobToken,
+    body: { title: 'hijack' },
+  });
+  check('another user cannot update a note', otherUpdate.status === 404);
+
+  const noteUpdate = await api(`/api/notes/${noteId}`, {
+    method: 'PATCH',
+    token: aliceToken,
+    body: { title: 'Groceries', content: 'milk, eggs, bread' },
+  });
+  check('owner can update a note', noteUpdate.status === 200 && noteUpdate.body.note.content.includes('bread'));
+
+  const noteDelete = await api(`/api/notes/${noteId}`, { method: 'DELETE', token: aliceToken });
+  check('owner can delete a note', noteDelete.status === 200);
 
   console.log('\nE. Unauthenticated socket');
 
