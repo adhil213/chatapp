@@ -16,6 +16,7 @@ const { requireAuth } = require('../middleware/auth');
 const { createRateLimiter } = require('../middleware/rateLimit');
 const { serializeSelfUser } = require('../utils/serialize');
 const { validateSecretKey } = require('../utils/secretKey');
+const { readIdentity, applyIdentity } = require('../utils/identity');
 
 const router = express.Router();
 
@@ -146,6 +147,8 @@ router.post(
       throw new HttpError(400, secretKeyError, 'INVALID_SECRET_KEY');
     }
 
+    const identity = readIdentity(req.body);
+
     const existing = await User.findOne({ username });
 
     if (existing) {
@@ -163,6 +166,10 @@ router.post(
         secretKeyHash,
         hasSecretKey: true,
         notepadModeEnabled: true,
+        publicKey: identity.present ? identity.publicKey : null,
+        kdfSalt: identity.present ? identity.kdfSalt : null,
+        keyBackup: identity.present ? identity.keyBackup : null,
+        keyVersion: 1,
       });
 
       return res.status(201).json({ token: signToken(user._id), user: publicProfile(user) });
