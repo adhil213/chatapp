@@ -78,20 +78,33 @@ function mergeOne(existing, incoming) {
 }
 
 function mergeMessages(list, incoming, pending) {
+  if (!incoming || incoming.length === 0) return list;
+
   const next = list.slice();
+  let needsSort = false;
+  let tail = next.length ? next[next.length - 1] : null;
 
   for (const original of incoming) {
     const item = pending === undefined ? original : { ...original, pending };
     const index = next.findIndex((existing) => sameMessage(existing, item));
 
     if (index === -1) {
+      if (tail && compare(item, tail) < 0) {
+        needsSort = true;
+      }
+
       next.push(item);
+      tail = item;
     } else {
       next[index] = mergeOne(next[index], item);
     }
   }
 
-  return next.sort(compare);
+  if (needsSort) {
+    next.sort(compare);
+  }
+
+  return next;
 }
 
 export function useChat(recipientId) {
@@ -199,6 +212,17 @@ export function useChat(recipientId) {
       await deliver(payload);
     }
   }, [deliver]);
+
+  const clearChat = useCallback(() => {
+    pendingRef.current.clear();
+    inFlightRef.current.clear();
+    oldestCursorRef.current = null;
+    latestCursorRef.current = null;
+    loadedRef.current = false;
+    setMessages([]);
+    setHasMore(false);
+    setError(null);
+  }, []);
 
   const applyStatus = useCallback((messageId, status) => {
     setMessages((prev) => {
@@ -356,6 +380,15 @@ export function useChat(recipientId) {
 
       if (event.type === 'status') {
         applyStatus(event.messageId, event.status);
+        return;
+      }
+
+      if (event.type === 'conversation:cleared') {
+        const pairKey = [String(selfId), String(recipientId)].sort().join('__');
+
+        if (event.scope === 'all' || event.conversationId === pairKey) {
+          clearChat();
+        }
       }
     };
 
@@ -385,6 +418,7 @@ export function useChat(recipientId) {
     flushPending,
     applyStatus,
     requestRead,
+    clearChat,
   ]);
 
   useFocusEffect(
@@ -456,5 +490,6 @@ export function useChat(recipientId) {
     retry,
     retryAll: flushPending,
     loadOlder,
+    clearChat,
   };
 }
