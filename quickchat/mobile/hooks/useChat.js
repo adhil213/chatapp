@@ -3,6 +3,7 @@ import { useFocusEffect } from 'expo-router';
 
 import { useIdentity } from './useIdentity';
 import { useChatSocket } from './useChatSocket';
+import { useCrypto } from './useCrypto';
 import { getConversationMessages } from '../services/api';
 import { createClientMessageId } from '../utils/uuid';
 
@@ -19,6 +20,7 @@ const PERMANENT_ERRORS = new Set([
   'MISSING_CLIENT_MESSAGE_ID',
   'INVALID_PARTICIPANTS',
   'RECIPIENT_NOT_FOUND',
+  'MESSAGE_TOO_LONG',
 ]);
 
 const ERROR_MESSAGES = {
@@ -28,6 +30,7 @@ const ERROR_MESSAGES = {
   MISSING_CLIENT_MESSAGE_ID: 'The message could not be identified.',
   INVALID_PARTICIPANTS: 'This conversation is no longer valid.',
   RECIPIENT_NOT_FOUND: 'That user no longer exists.',
+  MESSAGE_TOO_LONG: 'That message is too long.',
 };
 
 function rank(status) {
@@ -107,7 +110,8 @@ function mergeMessages(list, incoming, pending) {
   return next;
 }
 
-export function useChat(recipientId) {
+export function useChat(recipientId, peerPublicKey) {
+  const { encryptMessage } = useCrypto();
   const { user } = useIdentity();
   const selfId = user ? user._id : null;
 
@@ -440,30 +444,44 @@ export function useChat(recipientId) {
         return false;
       }
 
-      const payload = {
-        recipientId,
-        text: trimmed.slice(0, MAX_TEXT_LENGTH),
-        clientMessageId: createClientMessageId(),
-      };
+      const clientMessageId = createClientMessageId();
+      const body = trimmed.slice(0, MAX_TEXT_LENGTH);
+      const encrypted = encryptMessage(recipientId, peerPublicKey, body);
+      const payload = encrypted
+        ? {
+            recipientId,
+            clientMessageId,
+            cipher: encrypted.cipher,
+            nonce: encrypted.nonce,
+            alg: encrypted.alg,
+          }
+        : { recipientId, text: body, clientMessageId };
 
       const optimistic = {
         _id: undefined,
-        clientMessageId: payload.clientMessageId,
+        clientMessageId,
         conversationId,
         senderId: selfId,
         recipientId,
-        text: payload.text,
         status: 'sending',
         createdAt: new Date().toISOString(),
+        ...(encrypted
+          ? {
+              cipher: encrypted.cipher,
+              nonce: encrypted.nonce,
+              alg: encrypted.alg,
+              encrypted: true,
+            }
+          : { text: body, encrypted: false }),
       };
 
-      pendingRef.current.set(payload.clientMessageId, payload);
+      pendingRef.current.set(clientMessageId, payload);
       setMessages((prev) => mergeMessages(prev, [optimistic], true));
       deliver(payload);
 
       return true;
     },
-    [selfId, recipientId, conversationId, deliver]
+    [selfId, recipientId, peerPublicKey, conversationId, deliver, encryptMessage]
   );
 
   const retry = useCallback(

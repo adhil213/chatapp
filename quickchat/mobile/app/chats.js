@@ -16,22 +16,30 @@ import { Redirect, useFocusEffect, useRouter } from 'expo-router';
 
 import OnlineDot from '../components/OnlineDot';
 import { useChatSocket } from '../hooks/useChatSocket';
+import { useCrypto } from '../hooks/useCrypto';
 import { useIdentity } from '../hooks/useIdentity';
 import { useNotepad } from '../hooks/useNotepad';
 import { clearAllConversations, listConversations } from '../services/api';
 import { presenceLabel } from '../utils/presence';
 
-function preview(conversation) {
+function preview(conversation, resolveText) {
   const message = conversation.lastMessage;
 
   if (!message) return 'No messages yet';
 
-  return message.text;
+  if (!message.encrypted) return message.text || '';
+
+  const text = resolveText(message);
+
+  return text == null ? '🔒 Encrypted message' : text;
 }
 
 const ConversationRow = memo(function ConversationRow({ item, entry, onOpen }) {
+  const { decryptMessage } = useCrypto();
   const resolved = entry || { online: item.user.online, lastSeen: item.user.lastSeen };
   const label = resolved.online ? 'Online' : presenceLabel(resolved);
+  const peerPublicKey = item.user.publicKey;
+  const resolveText = (message) => decryptMessage(item.user._id, peerPublicKey, message);
 
   return (
     <TouchableOpacity style={styles.row} onPress={() => onOpen(item)}>
@@ -48,7 +56,7 @@ const ConversationRow = memo(function ConversationRow({ item, entry, onOpen }) {
           {item.user.displayName}
         </Text>
         <Text style={[styles.subtitle, resolved.online && styles.subtitleOnline]} numberOfLines={1}>
-          {resolved.online ? label : preview(item)}
+          {resolved.online ? label : preview(item, resolveText)}
         </Text>
       </View>
       {item.unreadCount > 0 ? (
@@ -64,6 +72,7 @@ export default function ChatsScreen() {
   const router = useRouter();
   const { user, loading: authLoading } = useIdentity();
   const { notepadMode, unlocked, lock } = useNotepad();
+  const { unlocked: cryptoUnlocked } = useCrypto();
   const { presence, seedPresence, subscribe } = useChatSocket();
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -256,7 +265,7 @@ export default function ChatsScreen() {
         keyExtractor={(item) => item.conversationId}
         ListHeaderComponent={header}
         contentContainerStyle={styles.list}
-        extraData={presence}
+        extraData={{ presence, cryptoUnlocked }}
         initialNumToRender={15}
         maxToRenderPerBatch={15}
         windowSize={9}

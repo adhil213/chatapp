@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { useCrypto } from './useCrypto';
 import * as api from '../services/api';
 
 const KEY_PREFIX = 'quickchat.notes.';
@@ -35,6 +36,7 @@ async function writeCache(key, notes) {
 
 export function useNotes(userId, remote) {
   const key = storageKey(userId);
+  const { encryptNote, unlocked } = useCrypto();
   const [notes, setNotes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -138,7 +140,12 @@ export function useNotes(userId, remote) {
       }
 
       if (_id && !String(_id).startsWith('local-')) {
-        const updated = await api.updateNote(_id, { title: cleanTitle, content: cleanContent });
+        const encrypted = encryptNote({ title: cleanTitle, content: cleanContent });
+        const payload = encrypted
+          ? { cipher: encrypted.cipher, nonce: encrypted.nonce, alg: encrypted.alg }
+          : { title: cleanTitle, content: cleanContent };
+
+        const updated = await api.updateNote(_id, payload);
 
         const next = notesRef.current.map((note) => (note._id === updated._id ? updated : note));
 
@@ -147,7 +154,12 @@ export function useNotes(userId, remote) {
         return updated;
       }
 
-      const created = await api.createNote({ title: cleanTitle, content: cleanContent });
+      const encrypted = encryptNote({ title: cleanTitle, content: cleanContent });
+      const payload = encrypted
+        ? { cipher: encrypted.cipher, nonce: encrypted.nonce, alg: encrypted.alg }
+        : { title: cleanTitle, content: cleanContent };
+
+      const created = await api.createNote(payload);
 
       const next = [created, ...notesRef.current];
 
@@ -155,7 +167,7 @@ export function useNotes(userId, remote) {
 
       return created;
     },
-    [remote, persist]
+    [remote, persist, encryptNote, unlocked]
   );
 
   const removeNote = useCallback(
