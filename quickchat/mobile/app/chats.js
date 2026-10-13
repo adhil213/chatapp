@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   BackHandler,
   FlatList,
+  Platform,
   RefreshControl,
   StyleSheet,
   Text,
@@ -16,7 +18,7 @@ import OnlineDot from '../components/OnlineDot';
 import { useChatSocket } from '../hooks/useChatSocket';
 import { useIdentity } from '../hooks/useIdentity';
 import { useNotepad } from '../hooks/useNotepad';
-import { listConversations } from '../services/api';
+import { clearAllConversations, listConversations } from '../services/api';
 import { presenceLabel } from '../utils/presence';
 
 function preview(conversation) {
@@ -26,6 +28,37 @@ function preview(conversation) {
 
   return message.text;
 }
+
+const ConversationRow = memo(function ConversationRow({ item, entry, onOpen }) {
+  const resolved = entry || { online: item.user.online, lastSeen: item.user.lastSeen };
+  const label = resolved.online ? 'Online' : presenceLabel(resolved);
+
+  return (
+    <TouchableOpacity style={styles.row} onPress={() => onOpen(item)}>
+      <View style={styles.avatarWrap}>
+        <View style={styles.avatar}>
+          <Text style={styles.avatarText}>{item.user.displayName.charAt(0).toUpperCase()}</Text>
+        </View>
+        <View style={styles.dotOverlay}>
+          <OnlineDot online={resolved.online} bordered />
+        </View>
+      </View>
+      <View style={styles.info}>
+        <Text style={styles.name} numberOfLines={1}>
+          {item.user.displayName}
+        </Text>
+        <Text style={[styles.subtitle, resolved.online && styles.subtitleOnline]} numberOfLines={1}>
+          {resolved.online ? label : preview(item)}
+        </Text>
+      </View>
+      {item.unreadCount > 0 ? (
+        <View style={styles.badge}>
+          <Text style={styles.badgeText}>{item.unreadCount}</Text>
+        </View>
+      ) : null}
+    </TouchableOpacity>
+  );
+});
 
 export default function ChatsScreen() {
   const router = useRouter();
@@ -37,6 +70,8 @@ export default function ChatsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const mountedRef = useRef(true);
+  const debounceRef = useRef(null);
+  const loadRef = useRef(null);
 
   const load = useCallback(
     async (isRefresh = false) => {
@@ -67,11 +102,18 @@ export default function ChatsScreen() {
     [seedPresence]
   );
 
+  loadRef.current = load;
+
   useEffect(() => {
     mountedRef.current = true;
 
     return () => {
       mountedRef.current = false;
+
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
     };
   }, []);
 
@@ -97,11 +139,22 @@ export default function ChatsScreen() {
 
   useEffect(() => {
     return subscribe((event) => {
-      if (event.type === 'message' || event.type === 'conversation:new' || event.type === 'ready') {
-        load();
+      if (
+        event.type === 'message' ||
+        event.type === 'conversation:new' ||
+        event.type === 'ready' ||
+        event.type === 'conversation:cleared'
+      ) {
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+
+        debounceRef.current = setTimeout(() => {
+          debounceRef.current = null;
+
+          if (mountedRef.current) loadRef.current();
+        }, 400);
       }
     });
-  }, [subscribe, load]);
+  }, [subscribe]);
 
   if (authLoading) {
     return (
@@ -124,11 +177,36 @@ export default function ChatsScreen() {
     router.replace('/');
   };
 
-  const openChat = (conversation) => {
-    router.push({
-      pathname: '/chat/[id]',
-      params: { id: conversation.user._id, name: conversation.user.displayName },
-    });
+  const openChat = useCallback(
+    (conversation) => {
+      router.push({
+        pathname: '/chat/[id]',
+        params: { id: conversation.user._id, name: conversation.user.displayName },
+      });
+    },
+    [router]
+  );
+
+  const confirmClearAll = () => {
+    Alert.alert(
+      'Clear all chats',
+      'This permanently deletes every message in all of your chats. It cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear all',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await clearAllConversations();
+              await load(true);
+            } catch (err) {
+              Alert.alert('Could not clear chats', String((err && err.message) || err));
+            }
+          },
+        },
+      ]
+    );
   };
 
   const header = (
@@ -148,6 +226,11 @@ export default function ChatsScreen() {
           <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/profile')}>
             <Text style={styles.actionText}>Profile</Text>
           </TouchableOpacity>
+          {conversations.length > 0 ? (
+            <TouchableOpacity style={styles.actionBtn} onPress={confirmClearAll}>
+              <Text style={styles.actionText}>Clear all</Text>
+            </TouchableOpacity>
+          ) : null}
           {notepadMode ? (
             <TouchableOpacity style={styles.actionBtn} onPress={hideChat}>
               <Text style={styles.actionText}>Notes</Text>
@@ -174,6 +257,10 @@ export default function ChatsScreen() {
         ListHeaderComponent={header}
         contentContainerStyle={styles.list}
         extraData={presence}
+        initialNumToRender={15}
+        maxToRenderPerBatch={15}
+        windowSize={9}
+        removeClippedSubviews={Platform.OS === 'android'}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} />}
         ListEmptyComponent={
           <View style={styles.empty}>
@@ -186,41 +273,9 @@ export default function ChatsScreen() {
             )}
           </View>
         }
-        renderItem={({ item }) => {
-          const entry = presence[item.user._id] || {
-            online: item.user.online,
-            lastSeen: item.user.lastSeen,
-          };
-          const label = entry.online ? 'Online' : presenceLabel(entry);
-
-          return (
-            <TouchableOpacity style={styles.row} onPress={() => openChat(item)}>
-              <View style={styles.avatarWrap}>
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>
-                    {item.user.displayName.charAt(0).toUpperCase()}
-                  </Text>
-                </View>
-                <View style={styles.dotOverlay}>
-                  <OnlineDot online={entry.online} bordered />
-                </View>
-              </View>
-              <View style={styles.info}>
-                <Text style={styles.name} numberOfLines={1}>
-                  {item.user.displayName}
-                </Text>
-                <Text style={[styles.subtitle, entry.online && styles.subtitleOnline]} numberOfLines={1}>
-                  {entry.online ? label : preview(item)}
-                </Text>
-              </View>
-              {item.unreadCount > 0 ? (
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>{item.unreadCount}</Text>
-                </View>
-              ) : null}
-            </TouchableOpacity>
-          );
-        }}
+        renderItem={({ item }) => (
+          <ConversationRow item={item} entry={presence[item.user._id]} onOpen={openChat} />
+        )}
       />
     </SafeAreaView>
   );
