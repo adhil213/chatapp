@@ -41,10 +41,10 @@ export async function getHealth() {
   return request('/api/health');
 }
 
-export async function register({ username, displayName, password }) {
+export async function register({ username, displayName, password, secretKey }) {
   return request('/api/auth/register', {
     method: 'POST',
-    body: { username, displayName, password },
+    body: { username, displayName, password, secretKey },
   });
 }
 
@@ -109,6 +109,77 @@ export async function acceptRequest(id) {
 
 export async function rejectRequest(id) {
   return request(`/api/requests/${id}/reject`, { method: 'POST' });
+}
+
+export async function verifySecretKey({ secretKey }) {
+  return request('/api/vault/unlock', {
+    method: 'POST',
+    body: { secretKey },
+  });
+}
+
+export async function createSecretKey({ secretKey }) {
+  const body = await request('/api/vault/secret-key', {
+    method: 'POST',
+    body: { secretKey },
+  });
+
+  return body.user;
+}
+
+export async function changeSecretKey({ currentSecretKey, newSecretKey }) {
+  const body = await request('/api/vault/secret-key', {
+    method: 'PATCH',
+    body: { currentSecretKey, newSecretKey },
+  });
+
+  return body.user;
+}
+
+export async function resetSecretKey({ password, secretKey }) {
+  const body = await request('/api/vault/reset', {
+    method: 'POST',
+    body: { password, secretKey },
+  });
+
+  return body.user;
+}
+
+export async function setNotepadMode(enabled) {
+  const body = await request('/api/vault/notepad-mode', {
+    method: 'PATCH',
+    body: { enabled },
+  });
+
+  return body.user;
+}
+
+export async function listNotes() {
+  const body = await request('/api/notes');
+
+  return body.notes;
+}
+
+export async function createNote({ title, content }) {
+  const body = await request('/api/notes', {
+    method: 'POST',
+    body: { title, content },
+  });
+
+  return body.note;
+}
+
+export async function updateNote(id, { title, content }) {
+  const body = await request(`/api/notes/${id}`, {
+    method: 'PATCH',
+    body: { title, content },
+  });
+
+  return body.note;
+}
+
+export async function deleteNote(id) {
+  return request(`/api/notes/${id}`, { method: 'DELETE' });
 }
 
 export async function getConversationMessages({ otherId, limit, before, after } = {}) {

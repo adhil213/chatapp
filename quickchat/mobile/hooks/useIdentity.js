@@ -65,8 +65,8 @@ export function IdentityProvider({ children }) {
   );
 
   const signUp = useCallback(
-    async ({ username, displayName, password }) => {
-      const result = await api.register({ username, displayName, password });
+    async ({ username, displayName, password, secretKey }) => {
+      const result = await api.register({ username, displayName, password, secretKey });
 
       await persist(result.token, result.user);
 
@@ -82,29 +82,36 @@ export function IdentityProvider({ children }) {
     setUser(null);
   }, []);
 
-  const updateProfile = useCallback(async ({ displayName }) => {
-    const updated = await api.updateMe({ displayName });
-
-    setUser(updated);
+  const applyUser = useCallback(async (nextUser) => {
+    setUser(nextUser);
 
     try {
       const raw = await AsyncStorage.getItem(STORAGE_KEY);
 
       if (raw) {
         const session = JSON.parse(raw);
-        session.user = updated;
+        session.user = nextUser;
         await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(session));
       }
     } catch (err) {
       console.warn('[auth] failed to persist profile update', err);
     }
 
-    return updated;
+    return nextUser;
   }, []);
 
+  const updateProfile = useCallback(
+    async ({ displayName }) => {
+      const updated = await api.updateMe({ displayName });
+
+      return applyUser(updated);
+    },
+    [applyUser]
+  );
+
   const value = useMemo(
-    () => ({ user, token, loading, signIn, signUp, signOut, updateProfile, setUser }),
-    [user, token, loading, signIn, signUp, signOut, updateProfile]
+    () => ({ user, token, loading, signIn, signUp, signOut, updateProfile, applyUser, setUser }),
+    [user, token, loading, signIn, signUp, signOut, updateProfile, applyUser]
   );
 
   return <IdentityContext.Provider value={value}>{children}</IdentityContext.Provider>;
