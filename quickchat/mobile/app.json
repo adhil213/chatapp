@@ -25,17 +25,7 @@
     },
     "plugins": [
       "expo-router",
-      "expo-asset",
-      [
-        "expo-build-properties",
-        {
-          "android": {
-            "enableProguardInReleaseBuilds": true,
-            "enableShrinkResourcesInReleaseBuilds": true,
-            "useLegacyPackaging": false
-          }
-        }
-      ]
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": false
